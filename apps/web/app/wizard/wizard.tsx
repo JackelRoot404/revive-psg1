@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import type { WalletAccount } from "@wallet-standard/base";
 import { address, createSolanaRpc, mainnet } from "@solana/kit";
 import {
+  LICENSE_PRICE_USDC,
   SOLANA_USDC_MINT,
   TREASURY_WALLET,
   USDC_AMOUNT_BASE_UNITS,
@@ -26,6 +27,7 @@ import { finalizeWebScan, WebAdbPsg1, WebFastbootPsg1, type WebCompatibilityScan
 
 const API = apiUrl();
 const WEB_VERSION = "0.2.0-web-alpha";
+const LICENSE_PRICE_LABEL = Number(LICENSE_PRICE_USDC).toFixed(2);
 
 type Stage = "intro" | "adb" | "bootloader" | "fastboot" | "session" | "unsupported" | "wallet" | "authorize" | "order" | "paying" | "verifying" | "paymentPending" | "installerProof" | "ready";
 type Session = { sessionId: string; supported: boolean; browserToken: string; profileId: string | null; expiresAt: string };
@@ -245,7 +247,7 @@ export function Wizard() {
 
     {stage === "wallet" && <div className="wizard-step"><Step number="2" title="Connect the paying wallet" /><p>Phantom and Solflare are supported through Solana Wallet Standard. The extension must be installed in this same browser.</p>{wallets.length ? <div className="wallet-list">{wallets.map((candidate) => <button className={`button ${wallet?.name === candidate.name ? "primary" : "ghost"}`} key={candidate.name} onClick={() => chooseWallet(candidate)}>{wallet?.name === candidate.name ? "Connected: " : "Connect "}{candidate.name}</button>)}</div> : <div className="pending"><strong>No compatible wallet found</strong><p>Install or unlock Phantom or Solflare, then reload this page.</p></div>}{account && <><p className="wallet-account">Account <code>{shortAddress(account.address)}</code></p><button className="button primary wide" onClick={authorizeCheckout}>Sign checkout authorization</button></>}</div>}
     {stage === "authorize" && <Progress title="Confirm the non-transaction authorization message…" />}
-    {stage === "order" && <div className="wizard-step"><Step number="3" title="License this PSG1" /><div className="order-summary"><span>Permanent device license</span><strong>29.00 USDC</strong><small>Solana mainnet · official USDC mint · released updates included</small></div><label className="field">Private beta invite (optional)<input value={promo} onChange={(event) => setPromo(event.target.value)} placeholder="rpb_…" autoComplete="off" spellCheck={false} /></label><button className="button primary wide" disabled={!promo.trim() && !canCreatePaidOrder} onClick={createOrder}>{promo.trim() ? "Redeem beta invite" : canCreatePaidOrder ? "Pay 29 USDC" : "Public sales are not open"}</button><small>Normal refunds remain available until the first destructive command begins. The current WebUSB alpha does not issue that command.</small></div>}
+    {stage === "order" && <div className="wizard-step"><Step number="3" title="License this PSG1" /><div className="order-summary"><span>Permanent device license</span><strong>{LICENSE_PRICE_LABEL} USDC</strong><small>Solana mainnet · official USDC mint · released updates included</small></div><label className="field">Private beta invite (optional)<input value={promo} onChange={(event) => setPromo(event.target.value)} placeholder="rpb_…" autoComplete="off" spellCheck={false} /></label><button className="button primary wide" disabled={!promo.trim() && !canCreatePaidOrder} onClick={createOrder}>{promo.trim() ? "Redeem beta invite" : canCreatePaidOrder ? `Pay ${Number(LICENSE_PRICE_USDC)} USDC` : "Public sales are not open"}</button><small>Normal refunds remain available until the first destructive command begins. The current WebUSB alpha does not issue that command.</small></div>}
     {(stage === "paying" || stage === "verifying") && <Progress title={stage === "paying" ? "Confirm the exact USDC payment…" : "Waiting for finalized Solana verification—do not pay again…"} />}
     {stage === "paymentPending" && <div className="pending"><strong>Verification is incomplete</strong><p>If your wallet shows a transaction, do not pay again. Retry the same order.</p><button className="button primary wide" onClick={retryVerification}>Retry verification</button></div>}
     {stage === "installerProof" && <Progress title="Sign once more to prove you control the wallet that paid…" />}
@@ -319,6 +321,9 @@ const ERROR_MESSAGES: Record<string, string> = {
 function messageOf(cause: unknown) {
   if (cause instanceof ApiError) return ERROR_MESSAGES[cause.code] ?? cause.message;
   if (cause instanceof DOMException && cause.name === "NotFoundError") return "No USB device was selected. The PSG1 was not modified.";
+  if ((cause instanceof DOMException && cause.name === "SecurityError") || (cause instanceof Error && /permissions policy|feature ["']?usb["']? is disallowed/iu.test(cause.message))) {
+    return "WebUSB is blocked by this page or browser window. Open the wizard directly in a top-level Chrome or Edge tab (not an embedded preview), then reload it.";
+  }
   if (cause instanceof Error) return /reject|declin|cancel/iu.test(cause.message) ? "The request was cancelled. No new payment or modification was made." : cause.message;
   return "The wizard stopped safely before making another change.";
 }

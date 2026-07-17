@@ -1,11 +1,13 @@
 import type { NextConfig } from "next";
 
+const localDevelopment = process.env.NODE_ENV === "development";
+const connectSources = localDevelopment ? "'self' https: http://localhost:8080 ws://localhost:*" : "'self' https:";
 const securityHeaders = [
-  { key: "Content-Security-Policy", value: "default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self' data:; form-action 'none'; frame-ancestors 'none'; img-src 'self' data: blob:; object-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; upgrade-insecure-requests" },
+  { key: "Content-Security-Policy", value: `default-src 'self'; base-uri 'self'; connect-src ${connectSources}; font-src 'self' data:; form-action 'none'; frame-ancestors 'none'; img-src 'self' data: blob:; object-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:${localDevelopment ? "" : "; upgrade-insecure-requests"}` },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), usb=()" }
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), usb=(self)" }
 ];
 
 const nextConfig: NextConfig = {

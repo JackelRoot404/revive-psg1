@@ -19,7 +19,7 @@ const REFERENCE = "Vote111111111111111111111111111111111111111";
 const ORDER_ID = "order_checkout_123";
 
 describe("buildPaymentInstructions", () => {
-  it("creates the treasury ATA idempotently, transfers exactly 29 USDC, and embeds the order reference", async () => {
+  it("creates the treasury ATA idempotently, transfers exactly 19 USDC, and embeds the order reference", async () => {
     const result = await buildPaymentInstructions({ payer: PAYER, reference: REFERENCE, orderId: ORDER_ID });
     expect(result.instructions).toHaveLength(3);
 

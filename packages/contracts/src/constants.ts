@@ -1,8 +1,8 @@
 export const PRODUCT_NAME = "Revive PSG1";
 export const DEVICE_ID_DOMAIN = "revive-psg1:v1";
-export const LICENSE_PRICE_USDC = "29.000000";
+export const LICENSE_PRICE_USDC = "19.000000";
 export const USDC_DECIMALS = 6;
-export const USDC_AMOUNT_BASE_UNITS = 29_000_000n;
+export const USDC_AMOUNT_BASE_UNITS = 19_000_000n;
 export const SOLANA_USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 export const TREASURY_WALLET = "EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y";
 export const BETA_PROMO_CODE = "BICCSDEV";

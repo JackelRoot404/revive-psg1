@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { BETA_PROMO_CODE, TREASURY_WALLET, browserProofMessage, compatibilityProfileSchema, deviceIdSchema, entitlementRecoverySchema, firmwareArtifactSchema, orderCreateSchema, releaseManifestSchema, sessionCreateSchema, sessionProofMessage, webCheckoutWalletChallengeMessage, webInstallerWalletChallengeMessage, webSessionCreateSchema, webSessionProofMessage } from "./index";
+import { BETA_PROMO_CODE, LICENSE_PRICE_USDC, TREASURY_WALLET, USDC_AMOUNT_BASE_UNITS, browserProofMessage, compatibilityProfileSchema, deviceIdSchema, entitlementRecoverySchema, firmwareArtifactSchema, orderCreateSchema, releaseManifestSchema, sessionCreateSchema, sessionProofMessage, webCheckoutWalletChallengeMessage, webInstallerWalletChallengeMessage, webSessionCreateSchema, webSessionProofMessage } from "./index";
 
 describe("public contracts", () => {
   it("accepts a SHA-256 device id", () => {
@@ -12,6 +12,8 @@ describe("public contracts", () => {
 
   it("pins the commercial constants", () => {
     expect(BETA_PROMO_CODE).toBe("BICCSDEV");
+    expect(LICENSE_PRICE_USDC).toBe("19.000000");
+    expect(USDC_AMOUNT_BASE_UNITS).toBe(19_000_000n);
     expect(TREASURY_WALLET).toBe("EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y");
   });
 

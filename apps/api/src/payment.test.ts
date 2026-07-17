@@ -40,7 +40,7 @@ function balance(accountIndex: number, owner: string, amount: bigint, mint: stri
 describe("Solana payment validation", () => {
   it("accepts exact official-USDC payer and treasury deltas with reference", () => expect(() => verifier.validateTransaction(transaction(), { transactionSignature: "sig", payer, treasury, reference })).not.toThrow());
   it("rejects an overpayment instead of silently licensing it", () => expect(() => verifier.validateTransaction(transaction(USDC_AMOUNT_BASE_UNITS + 1n), { transactionSignature: "sig", payer, treasury, reference })).toThrow(/exact USDC amount/));
-  it("rejects a database/order amount that differs from the fixed public price", () => expect(() => verifier.validateTransaction(transaction(), { transactionSignature: "sig", payer, treasury, reference, amountBaseUnits: USDC_AMOUNT_BASE_UNITS - 1n })).toThrow(/fixed 29 USDC price/));
+  it("rejects a database/order amount that differs from the fixed public price", () => expect(() => verifier.validateTransaction(transaction(), { transactionSignature: "sig", payer, treasury, reference, amountBaseUnits: USDC_AMOUNT_BASE_UNITS - 1n })).toThrow(/fixed 19 USDC price/));
   it("rejects any non-official mint even if balances otherwise match", () => expect(() => verifier.validateTransaction(transaction(), { transactionSignature: "sig", payer, treasury, reference, mint: address() })).toThrow(/official USDC/));
   it("rejects a transaction missing the unique order reference", () => {
     const value = transaction();

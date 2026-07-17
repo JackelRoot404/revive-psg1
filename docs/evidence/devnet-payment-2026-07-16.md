@@ -3,7 +3,7 @@
 Result: **passed** against canonical public Solana devnet.
 
 - Genesis: `EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG`
-- Amount: `29,000,000` base units of a fresh six-decimal test mint
+- Amount: `29,000,000` base units of a fresh six-decimal test mint (historical pre-19-USDC pricing test; retained as immutable transaction evidence)
 - Treasury owner: `EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y`
 - Ephemeral mint: `DsrEY9PczaPFK48qKNTSybE6JZz3GQ2azpRosk7WxJkr`
 - Order reference: `2MwSwhLqJ3FLJuakqZy2PrkVf4fz12mihPR5Pk57H5pS`

@@ -23,7 +23,7 @@ The web wizard proves its physical-device context by cross-checking ADB, USB-des
 
 After desktop proof, the browser discovers compatible Wallet Standard extensions injected into that browser. It accepts only Solana-mainnet accounts with message signing and legacy transaction signing, and exposes no address field, mobile QR, or wallet deep-link path. Wallet authorization signs a bounded domain/session/device/pairing-key challenge. The transfer then requires the same wallet.
 
-The API verifies finalized success, payer signer, official mainnet USDC mint, exact 29,000,000 base-unit payer debit and treasury credit, unique order reference, and unused transaction signature. Screenshots and typed signatures are not payment evidence.
+The API verifies finalized success, payer signer, official mainnet USDC mint, exact 19,000,000 base-unit payer debit and treasury credit, unique order reference, and unused transaction signature. Screenshots and typed signatures are not payment evidence.
 
 ## Logs and reports
 

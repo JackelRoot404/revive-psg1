@@ -17,7 +17,7 @@ Safari, Firefox, Android, and iOS are unsupported because they do not provide th
 2. It reboots to Fastboot, requests that USB interface, cross-checks the ADB, Fastboot, and USB serials, reads the system partition size, and reboots to Android.
 3. The browser creates a signed ephemeral session. The private session key is kept in memory.
 4. Unknown firmware stops before charging, binding, unlocking, wiping, or flashing.
-5. A compatible injected wallet signs a checkout challenge. Paid orders transfer exactly 29 USDC and are accepted only after finalized backend verification.
+5. A compatible injected wallet signs a checkout challenge. Paid orders transfer exactly 19 USDC and are accepted only after finalized backend verification.
 6. The receipt wallet signs a second message bound to the web-installer purpose, order, license, device, nonce, and expiration.
 7. The API issues a ten-minute `web-installer` token. The token can fetch the signed release and mark the destructive boundary; it cannot claim, recover, or refund a license.
 8. Every release profile, manifest, and artifact must pass signature and hash verification before any destructive command.

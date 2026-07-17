@@ -1,5 +1,5 @@
 import bs58 from "bs58";
-import { SOLANA_USDC_MINT, USDC_AMOUNT_BASE_UNITS } from "@revive-psg1/contracts";
+import { LICENSE_PRICE_USDC, SOLANA_USDC_MINT, USDC_AMOUNT_BASE_UNITS } from "@revive-psg1/contracts";
 import type { Config } from "./config";
 
 export type PaymentExpectation = {
@@ -93,7 +93,7 @@ export class SolanaPaymentVerifier {
 
   validateTransaction(transaction: ParsedPaymentTransaction, input: PaymentExpectation): void {
     if (input.amountBaseUnits !== undefined && input.amountBaseUnits !== USDC_AMOUNT_BASE_UNITS) {
-      throw new PaymentVerificationError("Order amount does not match the fixed 29 USDC price", "WRONG_AMOUNT_EXPECTATION");
+      throw new PaymentVerificationError(`Order amount does not match the fixed ${Number(LICENSE_PRICE_USDC)} USDC price`, "WRONG_AMOUNT_EXPECTATION");
     }
     validatePaymentTransaction(transaction, input, {
       mint: SOLANA_USDC_MINT,

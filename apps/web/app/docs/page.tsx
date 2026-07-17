@@ -8,7 +8,7 @@ export default function Docs() {
     <ol><li>Connect the powered-on PSG1 with a data-capable USB cable.</li><li>Authorize ADB when the PSG1 asks.</li><li>Run the free scan. Serial, firmware, partitions, battery, host storage, and recovery support must all pass a signed profile.</li></ol>
     <p>An unknown build receives a redacted read-only compatibility report. It is never charged, bound, unlocked, or flashed.</p>
     <h2>License and checkout</h2>
-    <p>After the free scan matches a signed compatibility profile, an injected Phantom, Solflare, or other compatible Solana Wallet Standard extension authorizes checkout and, for paid orders, signs an exact 29 USDC mainnet transaction. After finalized payment, the same receipt wallet signs a separate purpose-bound message to unlock short-lived web-installer access. The permanent entitlement binds to the cross-checked PSG1 identifier—not the wallet or computer.</p>
+    <p>After the free scan matches a signed compatibility profile, an injected Phantom, Solflare, or other compatible Solana Wallet Standard extension authorizes checkout and, for paid orders, signs an exact 19 USDC mainnet transaction. After finalized payment, the same receipt wallet signs a separate purpose-bound message to unlock short-lived web-installer access. The permanent entitlement binds to the cross-checked PSG1 identifier—not the wallet or computer.</p>
     <h2>Unlock and installation</h2>
     <p>The app explains the wipe and verified-boot implications, requires an exact confirmation phrase, and journals every step. Downloads resume after interruption and are signature- and hash-checked before use. Normal refund eligibility ends immediately before the first destructive unlock/flash command.</p>
     <h2>What is tested</h2>

@@ -33,7 +33,7 @@ export default function Home() {
       <span className="section-label">THREE CONTROLLED STAGES</span>
       <div className="step-grid">
         <article><b>01</b><h3>Scan</h3><p>Open desktop Chrome or Edge and connect over USB. Revive checks serial consistency, firmware, battery, storage, and recovery support—free.</p></article>
-        <article><b>02</b><h3>License</h3><p>Pay 29 USDC from a paired wallet extension. The permanent entitlement binds to your PSG1, not the wallet.</p></article>
+        <article><b>02</b><h3>License</h3><p>Pay 19 USDC from a paired wallet extension. The permanent entitlement binds to your PSG1, not the wallet.</p></article>
         <article><b>03</b><h3>Revive</h3><p>Follow the guided unlock and install. Every artifact is signed and verified before the device is modified.</p></article>
       </div>
     </section>

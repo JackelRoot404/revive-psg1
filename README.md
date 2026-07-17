@@ -8,7 +8,7 @@ Self-service software for converting a compatible PlaySolana PSG1 into a general
 
 - Read-only ADB → USB descriptor → Fastboot serial cross-check and stable SHA-256 device binding.
 - Signed firmware-profile matching and unknown-firmware rejection.
-- Signed ephemeral web sessions, a free WebUSB ADB/Fastboot identity scan, Wallet Standard checkout, exact 29 USDC construction, finalized verification, purpose-bound receipt-wallet installer authorization, one-use references, and device-bound licensing.
+- Signed ephemeral web sessions, a free WebUSB ADB/Fastboot identity scan, Wallet Standard checkout, exact 19 USDC construction, finalized verification, purpose-bound receipt-wallet installer authorization, one-use references, and device-bound licensing.
 - Backend-approved, one-time beta invites bound to a scanned device and atomically capped at ten redemptions; `BICCSDEV` is an internal program label, not a public coupon.
 - Recoverable device entitlement independent of the installed Android OS or computer.
 - Journaled allowlisted installer engine for `fastboot oem at-unlock-vboot`, validated fastbootd, vbmeta/system flashing, wipe, and reboot.

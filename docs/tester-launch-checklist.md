@@ -40,7 +40,7 @@ The marketing site can go live while checkout and destructive installation remai
 - [ ] Retain only hashed device IDs and redacted reports.
 - [ ] Supervise every destructive beta installation and keep a recovery operator available.
 - [ ] Stop enrollment immediately if any device remains unrecovered.
-- [ ] Do not enable 29 USDC public sales until all launch gates have reviewed evidence.
+- [ ] Do not enable 19 USDC public sales until all launch gates have reviewed evidence.
 
 ## Operations
 
