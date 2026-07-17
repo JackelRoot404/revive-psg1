@@ -152,6 +152,24 @@ export function Wizard({ earlyAccessFree, developmentHardwareFixture }: { earlyA
     }
   }
 
+  async function retrySecureSession() {
+    if (!scan) return;
+    setError("");
+    setStage("session");
+    try {
+      // A completed hardware scan reached Fastboot through the ADB reboot
+      // service, which is stronger evidence than an on-device reboot binary.
+      const verifiedScan = scan.installationState === "development_fixture" ? scan : { ...scan, recoveryCapable: true };
+      setScan(verifiedScan);
+      const created = await createWebSession(verifiedScan, verifiedScan.installationState === "development_fixture");
+      setSession(created);
+      setStage(created.supported ? earlyAccessFree ? "freeAccess" : "wallet" : "unsupported");
+    } catch (cause) {
+      setError(messageOf(cause));
+      setStage("intro");
+    }
+  }
+
   async function activateEarlyAccess() {
     if (!session) return;
     setError("");
@@ -309,6 +327,8 @@ export function Wizard({ earlyAccessFree, developmentHardwareFixture }: { earlyA
     {stage === "session" && <Progress title="Cross-checking device identity and signed compatibility profiles…" />}
 
     {scan && <><div className="scan-summary"><span>{scan.installationState === "development_fixture" ? "Simulated PSG1" : "PSG1 detected"}</span><span>{scan.model || scan.product}</span><span>Battery {scan.batteryPercent}%</span><span>CPU ↔ Fastboot identity ✓</span><span>{stateLabel(scan.installationState)}</span></div>{!scan.fastbootUsbDescriptorVerified && <div className="descriptor-advisory"><strong>Browser descriptor advisory</strong><p>The browser returned a cached mode-specific USB serial. The authoritative Rockchip CPU and Fastboot protocol identities matched; this advisory is retained in the compatibility record.</p></div>}{scan.installationState === "already_modified" && <div className="test-mode"><strong>Already-unlocked test lane</strong><p>This PSG1 is running a modified system image. Revive can test detection, device binding, entitlement, and diagnostics, but the API will reject destructive installation-start operations.</p></div>}{scan.installationState === "development_fixture" && <div className="test-mode"><strong>Simulation—not a hardware result</strong><p>This deterministic fixture exercises the web and API state machine only. It does not count as a real compatibility or flashing test.</p></div>}</>}
+
+    {stage === "intro" && scan && !session && <div className="pending"><strong>Hardware scan saved</strong><p>Retry the secure API session without reconnecting or rebooting the PSG1.</p><button className="button primary wide" onClick={retrySecureSession}>Retry secure session</button></div>}
 
     {stage === "unsupported" && <div className="blocked"><strong>This firmware is not supported yet</strong><p>The PSG1 was returned to Android. It was not charged, bound, unlocked, wiped, or flashed.</p></div>}
 

@@ -100,7 +100,7 @@ export class WebAdbPsg1 {
       this.adb.getProp("ro.build.version.sdk"),
       this.adb.getProp("ro.vendor.build.version.sdk"),
       this.adb.subprocess.noneProtocol.spawnWaitText(["dumpsys", "battery"]),
-      this.adb.subprocess.noneProtocol.spawnWaitText(["sh", "-c", "if [ -x /system/bin/reboot ]; then echo yes; fi"]),
+      this.adb.subprocess.noneProtocol.spawnWaitText(["sh", "-c", "if command -v reboot >/dev/null 2>&1 || [ -x /system/bin/toybox ] || [ -e /dev/block/by-name/recovery ]; then echo yes; fi"]),
       this.adb.subprocess.noneProtocol.spawnWaitText(["df", "-k", "/system"]),
       navigator.storage.estimate()
     ]);
@@ -254,6 +254,9 @@ export async function finalizeWebScan(
   const { bootloaderSerialCandidate: _bootloaderSerialCandidate, ...verifiedAdbScan } = adbScan;
   return {
     ...verifiedAdbScan,
+    // Reaching Fastboot through this scan proves that the ADB reboot service
+    // accepted a boot-mode transition even when the GSI has no reboot binary.
+    recoveryCapable: true,
     bootloaderUnlocked,
     installationState: classifyInstallationState({ ...adbScan, bootloaderUnlocked }),
     deviceId: await deviceIdForSerial(fastbootSerial),

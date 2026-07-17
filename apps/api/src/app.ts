@@ -978,7 +978,15 @@ export async function buildApp(dependencies: Dependencies) {
   });
 
   app.setErrorHandler((error, _request, reply) => {
-    if (error && typeof error === "object" && "issues" in error) return reply.code(400).send({ code: "INVALID_REQUEST", message: "Request validation failed" });
+    if (error && typeof error === "object" && "issues" in error) {
+      const issues = Array.isArray(error.issues) ? error.issues : [];
+      const paths = [...new Set(issues.map((issue) => {
+        if (!issue || typeof issue !== "object" || !("path" in issue) || !Array.isArray(issue.path)) return "request";
+        return issue.path.map(String).join(".") || "request";
+      }))].slice(0, 5);
+      const suffix = paths.length ? `: ${paths.join(", ")}` : "";
+      return reply.code(400).send({ code: "INVALID_REQUEST", message: `Request validation failed${suffix}` });
+    }
     app.log.error({ err: error }, "request failed");
     const statusCode = error instanceof Error && "statusCode" in error && typeof error.statusCode === "number" ? error.statusCode : 500;
     const code = error instanceof Error && "code" in error && typeof error.code === "string" ? error.code : "REQUEST_FAILED";
