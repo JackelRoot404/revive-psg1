@@ -31,7 +31,8 @@ const API = apiUrl();
 const WEB_VERSION = "0.2.0-web-alpha";
 const LICENSE_PRICE_LABEL = Number(LICENSE_PRICE_USDC).toFixed(2);
 
-type Stage = "intro" | "adb" | "bootloader" | "fastboot" | "session" | "unsupported" | "freeAccess" | "activatingFree" | "wallet" | "authorize" | "order" | "paying" | "verifying" | "paymentPending" | "installerProof" | "ready";
+type Stage = "intro" | "adb" | "bootloader" | "fastbootReady" | "fastboot" | "session" | "unsupported" | "freeAccess" | "activatingFree" | "wallet" | "authorize" | "order" | "paying" | "verifying" | "paymentPending" | "installerProof" | "ready";
+type AdbCompatibilityScan = Awaited<ReturnType<WebAdbPsg1["readCompatibility"]>>;
 type Session = { sessionId: string; supported: boolean; browserToken: string; profileId: string | null; expiresAt: string; installationState: WebCompatibilityScan["installationState"]; destructiveAllowed: false };
 type Order = {
   orderId: string;
@@ -49,6 +50,7 @@ export function Wizard({ earlyAccessFree, developmentHardwareFixture }: { earlyA
   const [stage, setStage] = useState<Stage>("intro");
   const [scan, setScan] = useState<WebCompatibilityScan | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [pendingFastboot, setPendingFastboot] = useState<{ snapshot: AdbCompatibilityScan; adbSerial: string } | null>(null);
   const [wallets, setWallets] = useState<ReviveWallet[]>([]);
   const [wallet, setWallet] = useState<ReviveWallet | null>(null);
   const [account, setAccount] = useState<WalletAccount | null>(null);
@@ -77,20 +79,37 @@ export function Wizard({ earlyAccessFree, developmentHardwareFixture }: { earlyA
     setError("");
     setStage("adb");
     let adb: WebAdbPsg1 | null = null;
-    let fastboot: WebFastbootPsg1 | null = null;
-    let fastbootRebooted = false;
+    let rebootStarted = false;
     try {
       adb = await WebAdbPsg1.request();
       const adbSerial = adb.normalizedSerial;
       const snapshot = await adb.readCompatibility();
       if (!snapshot.usbStable) throw new Error("The PSG1 USB connection was not stable enough for a safe scan.");
+      setPendingFastboot({ snapshot, adbSerial });
       setStage("bootloader");
+      rebootStarted = true;
       await adb.rebootBootloader();
-      await adb.close().catch(() => undefined);
       adb = null;
-      setStage("fastboot");
+      setStage("fastbootReady");
+    } catch (cause) {
+      setError(messageOf(cause));
+      setStage(rebootStarted ? "fastbootReady" : "intro");
+    } finally {
+      if (!rebootStarted) await adb?.close().catch(() => undefined);
+    }
+  }
+
+  async function continueFastbootScan() {
+    if (!pendingFastboot || !API) return;
+    setError("");
+    setStage("fastboot");
+    let fastboot: WebFastbootPsg1 | null = null;
+    let fastbootRebooted = false;
+    try {
+      // WebUSB requires this second requestDevice call to originate from its
+      // own user gesture after the PSG1 re-enumerates in Fastboot mode.
       fastboot = await WebFastbootPsg1.request();
-      const completed = await finalizeWebScan(snapshot, adbSerial, fastboot);
+      const completed = await finalizeWebScan(pendingFastboot.snapshot, pendingFastboot.adbSerial, fastboot);
       setScan(completed);
       setStage("session");
       const created = await createWebSession(completed);
@@ -99,12 +118,17 @@ export function Wizard({ earlyAccessFree, developmentHardwareFixture }: { earlyA
       fastbootRebooted = true;
       await fastboot.close().catch(() => undefined);
       fastboot = null;
+      setPendingFastboot(null);
       setStage(created.supported ? earlyAccessFree ? "freeAccess" : "wallet" : "unsupported");
     } catch (cause) {
       setError(messageOf(cause));
-      setStage("intro");
+      if (fastboot) {
+        setPendingFastboot(null);
+        setStage("intro");
+      } else {
+        setStage("fastbootReady");
+      }
     } finally {
-      await adb?.close().catch(() => undefined);
       if (fastboot && !fastbootRebooted) await fastboot.reboot().catch(() => undefined);
       await fastboot?.close().catch(() => undefined);
     }
@@ -281,6 +305,7 @@ export function Wizard({ earlyAccessFree, developmentHardwareFixture }: { earlyA
     {stage === "intro" && <div className="wizard-step"><Step number="1" title="Free hardware scan" /><p>Connect the powered-on PSG1 with USB debugging authorized. Chrome/Edge will ask you to select it once in Android and again after it reboots to Fastboot.</p><button className="button primary wide" disabled={!browserReady || !API} onClick={scanDevice}>Connect and scan PSG1</button><small>Keep the cable connected. Only read-only Fastboot queries and a normal reboot are used.</small>{developmentHardwareFixture && <div className="fixture-card"><strong>Developer fixture · localhost only</strong><p>Run the complete entitlement flow with a deterministic simulated stock, locked PSG1. It cannot unlock, wipe, flash, or download firmware.</p><button className="button ghost wide" disabled={!API} onClick={simulateStockDevice}>Simulate stock PSG1</button></div>}</div>}
     {stage === "adb" && <Progress title="Reading PSG1 hardware and firmware…" />}
     {stage === "bootloader" && <Progress title="Rebooting to the bootloader…" />}
+    {stage === "fastbootReady" && <div className="wizard-step"><Step number="2" title="Continue in Fastboot" /><p>The PSG1 has changed USB modes. Chrome requires a fresh click before it can show the second device chooser.</p><button className="button primary wide" onClick={continueFastbootScan}>Select PSG1 Fastboot device</button><small>Select the PSG1 in the browser prompt. Revive will run read-only queries and then reboot it to Android.</small></div>}
     {stage === "fastboot" && <Progress title="Select the PSG1 Fastboot device in the browser prompt…" />}
     {stage === "session" && <Progress title="Cross-checking device identity and signed compatibility profiles…" />}
 

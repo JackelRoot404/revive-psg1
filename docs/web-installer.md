@@ -14,7 +14,7 @@ Safari, Firefox, Android, and iOS are unsupported because they do not provide th
 ## Gated flow
 
 1. The browser requests the PSG1 ADB interface and reads only compatibility properties.
-2. It reboots to Fastboot, requests that USB interface, cross-checks the ADB, Fastboot, and USB serials, reads the system partition size, and reboots to Android.
+2. It reboots to Fastboot and pauses. The owner presses a dedicated continuation button because WebUSB requires a fresh user gesture for the second device chooser. The wizard then requests the Fastboot interface, cross-checks the ADB, Fastboot, and USB serials, reads the system partition size, and reboots to Android.
 3. The browser creates a signed ephemeral session. The private session key is kept in memory.
 4. Unknown firmware stops before charging, binding, unlocking, wiping, or flashing.
 5. A compatible injected wallet signs a checkout challenge. Paid orders transfer exactly 19 USDC and are accepted only after finalized backend verification.

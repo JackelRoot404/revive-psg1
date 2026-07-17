@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyInstallationState, deviceIdForSerial, normalizeSerial, parseFastbootResponse, parseFastbootSize, parseFastbootUnlocked } from "./webusb-psg1";
+import { classifyInstallationState, deviceIdForSerial, isExpectedUsbDisconnect, normalizeSerial, parseFastbootResponse, parseFastbootSize, parseFastbootUnlocked } from "./webusb-psg1";
 
 describe("PSG1 WebUSB transport primitives", () => {
   it("normalizes and hashes the same manufacturer serial deterministically", async () => {
@@ -43,5 +43,10 @@ describe("PSG1 WebUSB transport primitives", () => {
     expect(parseFastbootUnlocked("yes")).toBe(true);
     expect(parseFastbootUnlocked("locked")).toBe(false);
     expect(parseFastbootUnlocked("unknown")).toBeNull();
+  });
+
+  it("recognizes only expected USB teardown errors after an intentional reboot", () => {
+    expect(isExpectedUsbDisconnect(new DOMException("The device was disconnected.", "NetworkError"))).toBe(true);
+    expect(isExpectedUsbDisconnect(new Error("Fastboot rejected the command"))).toBe(false);
   });
 });

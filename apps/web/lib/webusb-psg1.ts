@@ -62,6 +62,10 @@ export class WebAdbPsg1 {
       credentialStore: new AdbWebCredentialStore("Revive PSG1 Web")
     });
     const adb = new Adb(transport);
+    // A reboot intentionally tears down the WebUSB transport. The ADB library
+    // exposes that event as a rejected promise, so attach a handler immediately
+    // while command-level calls continue to report unexpected failures.
+    void adb.disconnected.catch(() => undefined);
     const adbSerial = normalizeSerial(adb.serial);
     if (!adbSerial || adbSerial !== usbSerial) {
       await adb.close();
@@ -117,7 +121,11 @@ export class WebAdbPsg1 {
   }
 
   async rebootBootloader(): Promise<void> {
-    await this.adb.subprocess.noneProtocol.spawnWaitText(["reboot", "bootloader"]);
+    try {
+      await this.adb.power.bootloader();
+    } catch (cause) {
+      if (!isExpectedUsbDisconnect(cause)) throw cause;
+    }
   }
 
   async close(): Promise<void> {
@@ -249,6 +257,11 @@ export function parseFastbootUnlocked(value: string): boolean | null {
   if (["yes", "true", "1", "unlocked"].includes(normalized)) return true;
   if (["no", "false", "0", "locked"].includes(normalized)) return false;
   return null;
+}
+
+export function isExpectedUsbDisconnect(cause: unknown): boolean {
+  return cause instanceof Error
+    && /(?:device was disconnected|transfer(?:in|out).*disconnected|networkerror|connection.*closed)/iu.test(cause.message);
 }
 
 export function normalizeSerial(value: string): string {
