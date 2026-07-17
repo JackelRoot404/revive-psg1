@@ -4,7 +4,7 @@ This phase validates the desktop hosts and service plumbing without pretending t
 
 ## What this device can validate now
 
-- The same hashed PSG1 identity is derived on macOS and Windows from ADB, recovery, Fastboot, and USB descriptors.
+- The same hashed PSG1 identity is derived on macOS and Windows from the immutable Rockchip CPU serial read through Android/recovery and verified against the Fastboot protocol and Fastboot USB descriptor.
 - A signed compatibility profile is accepted and a tampered or unknown profile is rejected.
 - Browser checkout pairing cannot be reused from another browser instance or computer.
 - A device-bound beta entitlement can be claimed on one host and recovered on the other with the owner-saved recovery credential.

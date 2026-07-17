@@ -27,11 +27,16 @@ export type WebCompatibilityScan = {
   batteryPercent: number;
   charging: boolean;
   serialVerified: boolean;
+  immutableSerialVerified: boolean;
   usbStable: boolean;
   recoveryCapable: boolean;
   hostBytesAvailable: number;
   systemPartitionBytes: number;
 };
+
+export type AdbCompatibilityScan = Omit<WebCompatibilityScan,
+  "deviceId" | "systemPartitionBytes" | "serialVerified" | "immutableSerialVerified"
+> & { bootloaderSerialCandidate: string };
 
 export class WebAdbPsg1 {
   readonly adb: Adb;
@@ -74,8 +79,8 @@ export class WebAdbPsg1 {
     return new WebAdbPsg1(adb, adbSerial);
   }
 
-  async readCompatibility(): Promise<Omit<WebCompatibilityScan, "deviceId" | "systemPartitionBytes" | "serialVerified">> {
-    const [product, model, board, hardware, buildFingerprint, buildIncremental, systemBuildFingerprint, vendorBuildFingerprint, systemBuildIncremental, systemBuildType, lineageVersion, flashLocked, verifiedBootState, androidApi, vendorApi, battery, recovery, storage] = await Promise.all([
+  async readCompatibility(): Promise<AdbCompatibilityScan> {
+    const [product, model, board, hardware, buildFingerprint, buildIncremental, systemBuildFingerprint, vendorBuildFingerprint, systemBuildIncremental, systemBuildType, lineageVersion, flashLocked, verifiedBootState, cpuInfo, androidApi, vendorApi, battery, recovery, storage] = await Promise.all([
       firstProp(this.adb, ["ro.product.vendor.device", "ro.product.odm.device", "ro.product.device"]),
       firstProp(this.adb, ["ro.product.vendor.model", "ro.product.odm.model", "ro.product.model"]),
       boardIdentity(this.adb),
@@ -89,6 +94,7 @@ export class WebAdbPsg1 {
       this.adb.getProp("ro.lineage.version"),
       this.adb.getProp("ro.boot.flash.locked"),
       this.adb.getProp("ro.boot.verifiedbootstate"),
+      this.adb.subprocess.noneProtocol.spawnWaitText(["cat", "/proc/cpuinfo"]),
       this.adb.getProp("ro.build.version.sdk"),
       this.adb.getProp("ro.vendor.build.version.sdk"),
       this.adb.subprocess.noneProtocol.spawnWaitText(["dumpsys", "battery"]),
@@ -98,6 +104,10 @@ export class WebAdbPsg1 {
     const batteryPercent = Math.min(100, parseBatteryNumber(battery, "level"));
     const status = parseBatteryNumber(battery, "status");
     const serialAgain = normalizeSerial(this.adb.serial);
+    const bootloaderSerialCandidate = parseCpuInfoSerial(cpuInfo);
+    if (!bootloaderSerialCandidate) {
+      throw new Error("Android did not expose the immutable Rockchip CPU serial required for safe cross-mode identity verification.");
+    }
     const bootloaderUnlocked = flashLocked.trim() === "0" || verifiedBootState.trim().toLowerCase() === "orange";
     const identity = {
       systemBuildFingerprint: systemBuildFingerprint.trim() || buildFingerprint.trim(),
@@ -112,6 +122,7 @@ export class WebAdbPsg1 {
       buildFingerprint: buildFingerprint.trim(), buildIncremental: buildIncremental.trim(),
       ...identity,
       installationState: classifyInstallationState(identity),
+      bootloaderSerialCandidate,
       androidApiLevel: parseInteger(androidApi), vendorApiLevel: parseInteger(vendorApi),
       batteryPercent, charging: status === 2 || status === 5,
       usbStable: serialAgain === this.normalizedSerial,
@@ -218,18 +229,17 @@ export class WebFastbootPsg1 {
 }
 
 export async function finalizeWebScan(
-  adbScan: Omit<WebCompatibilityScan, "deviceId" | "systemPartitionBytes" | "serialVerified">,
-  adbSerial: string,
+  adbScan: AdbCompatibilityScan,
   fastboot: WebFastbootPsg1
 ): Promise<WebCompatibilityScan> {
   const fastbootSerial = normalizeSerial((await fastboot.getVariable("serialno")) || fastboot.normalizedUsbSerial);
   const usbSerial = fastboot.normalizedUsbSerial;
-  if (usbSerial && usbSerial !== adbSerial) {
-    throw new Error(`The Fastboot USB descriptor serial does not match the verified ADB serial (ADB length ${adbSerial.length}; USB length ${usbSerial.length}). No access was activated and no device modification was attempted.`);
+  const bootloaderSerialCandidate = normalizeSerial(adbScan.bootloaderSerialCandidate);
+  if (!fastbootSerial || fastbootSerial !== bootloaderSerialCandidate) {
+    throw new Error(`The Rockchip CPU and Fastboot protocol serials do not match (CPU length ${bootloaderSerialCandidate.length}; Fastboot length ${fastbootSerial.length}). No access was activated and no device modification was attempted.`);
   }
-  if (!fastbootSerial || fastbootSerial !== adbSerial) {
-    const descriptorState = usbSerial ? "matches ADB" : "is unavailable";
-    throw new Error(`The ADB and Fastboot protocol serials do not match (ADB length ${adbSerial.length}; Fastboot length ${fastbootSerial.length}; Fastboot USB descriptor ${descriptorState}). No access was activated and no device modification was attempted.`);
+  if (usbSerial && usbSerial !== fastbootSerial) {
+    throw new Error(`The Fastboot USB descriptor does not match the verified Fastboot protocol serial (protocol length ${fastbootSerial.length}; USB length ${usbSerial.length}). No access was activated and no device modification was attempted.`);
   }
   const systemValue = await fastboot.getVariable("partition-size:system").catch(() => fastboot.getVariable("partition-size:system_a"));
   const systemPartitionBytes = parseFastbootSize(systemValue);
@@ -239,13 +249,15 @@ export async function finalizeWebScan(
     throw new Error("Android and Fastboot reported different bootloader states. The scan stopped without modifying the device.");
   }
   const bootloaderUnlocked = fastbootUnlocked ?? adbScan.bootloaderUnlocked;
+  const { bootloaderSerialCandidate: _bootloaderSerialCandidate, ...verifiedAdbScan } = adbScan;
   return {
-    ...adbScan,
+    ...verifiedAdbScan,
     bootloaderUnlocked,
     installationState: classifyInstallationState({ ...adbScan, bootloaderUnlocked }),
     deviceId: await deviceIdForSerial(fastbootSerial),
     systemPartitionBytes,
-    serialVerified: true
+    serialVerified: true,
+    immutableSerialVerified: true
   };
 }
 
@@ -273,6 +285,10 @@ export function isExpectedUsbDisconnect(cause: unknown): boolean {
 
 export function normalizeSerial(value: string): string {
   return value.trim().replace(/[-_\s]/gu, "").toUpperCase();
+}
+
+export function parseCpuInfoSerial(value: string): string {
+  return normalizeSerial(value.match(/^\s*Serial\s*:\s*([A-Za-z0-9_-]+)\s*$/imu)?.[1] ?? "");
 }
 
 export async function deviceIdForSerial(serial: string): Promise<string> {

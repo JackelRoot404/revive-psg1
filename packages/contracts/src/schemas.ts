@@ -37,6 +37,7 @@ export const webCompatibilitySnapshotSchema = compatibilitySnapshotSchema.extend
   bootloaderUnlocked: z.boolean(),
   installationState: installationStateSchema,
   serialVerified: z.literal(true),
+  immutableSerialVerified: z.literal(true),
   usbStable: z.literal(true),
   recoveryCapable: z.literal(true),
   hostBytesAvailable: z.number().int().nonnegative(),

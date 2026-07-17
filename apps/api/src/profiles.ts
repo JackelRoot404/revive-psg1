@@ -51,6 +51,7 @@ export function webProfileMatches(profile: CompatibilityProfile, snapshot: WebCo
 export function webPreflightMatches(profile: CompatibilityProfile, snapshot: WebCompatibilitySnapshot): boolean {
   const system = profile.partitionConstraints.system;
   return snapshot.serialVerified
+    && snapshot.immutableSerialVerified
     && snapshot.usbStable
     && snapshot.recoveryCapable
     && Boolean(system)

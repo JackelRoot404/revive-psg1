@@ -9,7 +9,7 @@
 
 ## Device identity
 
-The authoritative identifier is `SHA-256("revive-psg1:v1" || normalized_fastboot_serial)`. Before forming it, the desktop requires the normalized Fastboot serial to equal the stock/recovery ADB serial and to appear in the USB descriptor report. Only the hash leaves the computer. Android IDs, host IDs, fingerprints, hostnames, and wallets are never entitlement keys.
+The authoritative identifier is `SHA-256("revive-psg1:v1" || normalized_fastboot_serial)`. PSG1 exposes different ordinary USB/ADB descriptor serials across Android and Fastboot modes, so those mode-specific values are never compared or used as the entitlement key. Before forming the identifier, the wizard reads the immutable Rockchip CPU `Serial` through ADB and requires it to equal both the Fastboot protocol serial and the Fastboot USB descriptor serial. Only the resulting domain-separated hash leaves the computer. Android installation IDs, mode-specific USB identifiers, host IDs, fingerprints, hostnames, and wallets are never entitlement keys.
 
 The public launch gate remains closed if any beta serial is missing or duplicated. A second Rockchip/eFuse signal must be validated before changing this design.
 
@@ -21,7 +21,7 @@ Private beta access likewise uses high-entropy `rpb_…` invites whose digests a
 
 During free Early Access, `EARLY_ACCESS_FREE=true` makes the API issue zero-value `early_access` entitlements only after a supported, cross-checked physical-device web session. No wallet or payment proof is requested. The payment verifier and paid order routes remain unchanged and return to enforcement when the flag is false.
 
-The web wizard proves its physical-device context by cross-checking ADB, USB-descriptor, and Fastboot serials before creating a signed ephemeral browser session. Wallet checkout is permitted only for a supported device session. After finalized payment, a separate challenge bound to `purpose:web-installer`, the order, license, device, wallet, nonce, and expiration must be signed by the receipt wallet before the API issues a ten-minute installer token. Checkout signatures cannot be replayed as installer authorization.
+The web wizard proves its physical-device context by reading the immutable Rockchip CPU serial through ADB, then cross-checking it against the Fastboot protocol and Fastboot USB descriptor before creating a signed ephemeral browser session. Wallet checkout is permitted only for a supported device session. After finalized payment, a separate challenge bound to `purpose:web-installer`, the order, license, device, wallet, nonce, and expiration must be signed by the receipt wallet before the API issues a ten-minute installer token. Checkout signatures cannot be replayed as installer authorization.
 
 After desktop proof, the browser discovers compatible Wallet Standard extensions injected into that browser. It accepts only Solana-mainnet accounts with message signing and legacy transaction signing, and exposes no address field, mobile QR, or wallet deep-link path. Wallet authorization signs a bounded domain/session/device/pairing-key challenge. The transfer then requires the same wallet.
 

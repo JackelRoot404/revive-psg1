@@ -50,7 +50,7 @@ export function Wizard({ earlyAccessFree, developmentHardwareFixture }: { earlyA
   const [stage, setStage] = useState<Stage>("intro");
   const [scan, setScan] = useState<WebCompatibilityScan | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [pendingFastboot, setPendingFastboot] = useState<{ snapshot: AdbCompatibilityScan; adbSerial: string } | null>(null);
+  const [pendingFastboot, setPendingFastboot] = useState<{ snapshot: AdbCompatibilityScan } | null>(null);
   const [wallets, setWallets] = useState<ReviveWallet[]>([]);
   const [wallet, setWallet] = useState<ReviveWallet | null>(null);
   const [account, setAccount] = useState<WalletAccount | null>(null);
@@ -82,10 +82,9 @@ export function Wizard({ earlyAccessFree, developmentHardwareFixture }: { earlyA
     let rebootStarted = false;
     try {
       adb = await WebAdbPsg1.request();
-      const adbSerial = adb.normalizedSerial;
       const snapshot = await adb.readCompatibility();
       if (!snapshot.usbStable) throw new Error("The PSG1 USB connection was not stable enough for a safe scan.");
-      setPendingFastboot({ snapshot, adbSerial });
+      setPendingFastboot({ snapshot });
       setStage("bootloader");
       rebootStarted = true;
       await adb.rebootBootloader();
@@ -109,7 +108,7 @@ export function Wizard({ earlyAccessFree, developmentHardwareFixture }: { earlyA
       // WebUSB requires this second requestDevice call to originate from its
       // own user gesture after the PSG1 re-enumerates in Fastboot mode.
       fastboot = await WebFastbootPsg1.request();
-      const completed = await finalizeWebScan(pendingFastboot.snapshot, pendingFastboot.adbSerial, fastboot);
+      const completed = await finalizeWebScan(pendingFastboot.snapshot, fastboot);
       setScan(completed);
       setStage("session");
       const created = await createWebSession(completed);
@@ -351,6 +350,7 @@ async function createWebSession(scan: WebCompatibilityScan, developmentFixture =
       androidApiLevel: scan.androidApiLevel, vendorApiLevel: scan.vendorApiLevel,
       batteryPercent: scan.batteryPercent, charging: scan.charging,
       serialVerified: scan.serialVerified, usbStable: scan.usbStable,
+      immutableSerialVerified: scan.immutableSerialVerified,
       recoveryCapable: scan.recoveryCapable, hostBytesAvailable: scan.hostBytesAvailable,
       systemPartitionBytes: scan.systemPartitionBytes
     }

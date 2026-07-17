@@ -6,7 +6,7 @@ Revive PSG1 is delivered through a browser-based WebUSB wizard.
 
 - Current desktop Chrome or Edge on macOS or Windows.
 - A secure HTTPS origin with WebUSB enabled by `Permissions-Policy`.
-- A data-capable USB cable and a PSG1 that exposes a stable manufacturer serial.
+- A data-capable USB cable and a PSG1 whose immutable Rockchip CPU serial is readable through Android and agrees with Fastboot.
 - An injected Solana Wallet Standard extension. Phantom and Solflare are explicit test targets; the implementation is capability-based rather than name-allowlisted.
 
 Safari, Firefox, Android, and iOS are unsupported because they do not provide the required WebUSB path. On Windows, every PSG1 reboot mode must already use a WebUSB-compatible WinUSB driver. A website cannot install or rebind a kernel driver.
@@ -14,7 +14,7 @@ Safari, Firefox, Android, and iOS are unsupported because they do not provide th
 ## Gated flow
 
 1. The browser requests the PSG1 ADB interface and reads only compatibility properties.
-2. It reboots to Fastboot and pauses. The owner presses a dedicated continuation button because WebUSB requires a fresh user gesture for the second device chooser. The wizard then requests the Fastboot interface, cross-checks the ADB, Fastboot, and USB serials, reads the system partition size, and reboots to Android.
+2. It reads the immutable Rockchip CPU serial through ADB, reboots to Fastboot, and pauses. The owner presses a dedicated continuation button because WebUSB requires a fresh user gesture for the second device chooser. The wizard then requests the Fastboot interface, requires the CPU serial to match the Fastboot protocol and Fastboot USB descriptor serials, reads the system partition size, and reboots to Android.
 3. The browser creates a signed ephemeral session. The private session key is kept in memory.
 4. Unknown firmware stops before charging, binding, unlocking, wiping, or flashing.
 5. A compatible injected wallet signs a checkout challenge. Paid orders transfer exactly 19 USDC and are accepted only after finalized backend verification.

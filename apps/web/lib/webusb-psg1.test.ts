@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { classifyInstallationState, deviceIdForSerial, isExpectedUsbDisconnect, normalizeSerial, parseFastbootResponse, parseFastbootSize, parseFastbootUnlocked, parseFastbootVariable } from "./webusb-psg1";
+import { classifyInstallationState, deviceIdForSerial, isExpectedUsbDisconnect, normalizeSerial, parseCpuInfoSerial, parseFastbootResponse, parseFastbootSize, parseFastbootUnlocked, parseFastbootVariable } from "./webusb-psg1";
 
 describe("PSG1 WebUSB transport primitives", () => {
   it("normalizes and hashes the same manufacturer serial deterministically", async () => {
     expect(normalizeSerial(" psg1-test_0001-a ")).toBe("PSG1TEST0001A");
     await expect(deviceIdForSerial("PSG1-TEST-0001-A")).resolves.toMatch(/^[a-f0-9]{64}$/u);
     expect(await deviceIdForSerial("PSG1-TEST-0001-A")).toBe(await deviceIdForSerial("psg1_test 0001_a"));
+  });
+
+  it("extracts the immutable Rockchip serial from Android CPU information", () => {
+    expect(parseCpuInfoSerial("processor : 0\nSerial : 2129c17e0292269d\nHardware : RK3588S\n")).toBe("2129C17E0292269D");
+    expect(parseCpuInfoSerial("processor : 0\nHardware : RK3588S\n")).toBe("");
   });
 
   it("parses only allowlisted Fastboot response statuses", () => {
