@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyInstallationState, deviceIdForSerial, isExpectedUsbDisconnect, normalizeSerial, parseCpuInfoSerial, parseFastbootResponse, parseFastbootSize, parseFastbootUnlocked, parseFastbootVariable } from "./webusb-psg1";
+import { classifyInstallationState, deviceIdForSerial, isExpectedUsbDisconnect, normalizeSerial, parseCpuInfoSerial, parseDfKilobytes, parseFastbootResponse, parseFastbootSize, parseFastbootUnlocked, parseFastbootVariable } from "./webusb-psg1";
 
 describe("PSG1 WebUSB transport primitives", () => {
   it("normalizes and hashes the same manufacturer serial deterministically", async () => {
@@ -22,6 +22,11 @@ describe("PSG1 WebUSB transport primitives", () => {
     expect(parseFastbootSize("0x1000")).toBe(4096);
     expect(parseFastbootSize("4096")).toBe(4096);
     expect(parseFastbootSize("not-a-size")).toBe(0);
+  });
+
+  it("reads the mounted Android system size from df output", () => {
+    expect(parseDfKilobytes("Filesystem 1K-blocks Used Available Use% Mounted on\n/dev/block/dm-0 3906250 2000000 1906250 52% /system\n")).toBe(4_000_000_000);
+    expect(parseDfKilobytes("invalid")).toBe(0);
   });
 
   it("removes getvar labels emitted through Fastboot INFO responses", () => {

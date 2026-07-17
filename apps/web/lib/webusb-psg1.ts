@@ -33,10 +33,11 @@ export type WebCompatibilityScan = {
   recoveryCapable: boolean;
   hostBytesAvailable: number;
   systemPartitionBytes: number;
+  superPartitionBytes: number;
 };
 
 export type AdbCompatibilityScan = Omit<WebCompatibilityScan,
-  "deviceId" | "systemPartitionBytes" | "serialVerified" | "immutableSerialVerified" | "fastbootUsbDescriptorVerified"
+  "deviceId" | "superPartitionBytes" | "serialVerified" | "immutableSerialVerified" | "fastbootUsbDescriptorVerified"
 > & { bootloaderSerialCandidate: string };
 
 export class WebAdbPsg1 {
@@ -81,7 +82,7 @@ export class WebAdbPsg1 {
   }
 
   async readCompatibility(): Promise<AdbCompatibilityScan> {
-    const [product, model, board, hardware, buildFingerprint, buildIncremental, systemBuildFingerprint, vendorBuildFingerprint, systemBuildIncremental, systemBuildType, lineageVersion, flashLocked, verifiedBootState, cpuInfo, androidApi, vendorApi, battery, recovery, storage] = await Promise.all([
+    const [product, model, board, hardware, buildFingerprint, buildIncremental, systemBuildFingerprint, vendorBuildFingerprint, systemBuildIncremental, systemBuildType, lineageVersion, flashLocked, verifiedBootState, cpuInfo, androidApi, vendorApi, battery, recovery, systemStorage, storage] = await Promise.all([
       firstProp(this.adb, ["ro.product.vendor.device", "ro.product.odm.device", "ro.product.device"]),
       firstProp(this.adb, ["ro.product.vendor.model", "ro.product.odm.model", "ro.product.model"]),
       boardIdentity(this.adb),
@@ -100,6 +101,7 @@ export class WebAdbPsg1 {
       this.adb.getProp("ro.vendor.build.version.sdk"),
       this.adb.subprocess.noneProtocol.spawnWaitText(["dumpsys", "battery"]),
       this.adb.subprocess.noneProtocol.spawnWaitText(["sh", "-c", "if [ -x /system/bin/reboot ]; then echo yes; fi"]),
+      this.adb.subprocess.noneProtocol.spawnWaitText(["df", "-k", "/system"]),
       navigator.storage.estimate()
     ]);
     const batteryPercent = Math.min(100, parseBatteryNumber(battery, "level"));
@@ -128,7 +130,8 @@ export class WebAdbPsg1 {
       batteryPercent, charging: status === 2 || status === 5,
       usbStable: serialAgain === this.normalizedSerial,
       recoveryCapable: recovery.trim() === "yes",
-      hostBytesAvailable: Math.max(0, (storage.quota ?? 0) - (storage.usage ?? 0))
+      hostBytesAvailable: Math.max(0, (storage.quota ?? 0) - (storage.usage ?? 0)),
+      systemPartitionBytes: parseDfKilobytes(systemStorage)
     };
   }
 
@@ -240,9 +243,9 @@ export async function finalizeWebScan(
     throw new Error(`The Rockchip CPU and Fastboot protocol serials do not match (CPU length ${bootloaderSerialCandidate.length}; Fastboot length ${fastbootSerial.length}). No access was activated and no device modification was attempted.`);
   }
   const fastbootUsbDescriptorVerified = Boolean(usbSerial) && usbSerial === fastbootSerial;
-  const systemValue = await fastboot.getVariable("partition-size:system").catch(() => fastboot.getVariable("partition-size:system_a"));
-  const systemPartitionBytes = parseFastbootSize(systemValue);
-  if (!systemPartitionBytes) throw new Error("Fastboot did not report a valid system partition size.");
+  if (!adbScan.systemPartitionBytes) throw new Error("Android did not report a valid mounted system size.");
+  const superPartitionBytes = parseFastbootSize(await fastboot.getVariable("partition-size:super"));
+  if (!superPartitionBytes) throw new Error("Fastboot did not report a valid super partition size.");
   const fastbootUnlocked = parseFastbootUnlocked(await fastboot.getVariable("unlocked").catch(() => ""));
   if (fastbootUnlocked !== null && fastbootUnlocked !== adbScan.bootloaderUnlocked) {
     throw new Error("Android and Fastboot reported different bootloader states. The scan stopped without modifying the device.");
@@ -254,7 +257,7 @@ export async function finalizeWebScan(
     bootloaderUnlocked,
     installationState: classifyInstallationState({ ...adbScan, bootloaderUnlocked }),
     deviceId: await deviceIdForSerial(fastbootSerial),
-    systemPartitionBytes,
+    superPartitionBytes,
     serialVerified: true,
     immutableSerialVerified: true,
     fastbootUsbDescriptorVerified
@@ -307,6 +310,13 @@ export function parseFastbootSize(value: string): number {
   const trimmed = value.trim();
   const parsed = /^0x[0-9a-f]+$/iu.test(trimmed) ? Number.parseInt(trimmed.slice(2), 16) : Number.parseInt(trimmed, 10);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 0;
+}
+
+export function parseDfKilobytes(value: string): number {
+  const fields = value.split(/\r?\n/gu).map((line) => line.trim()).filter(Boolean).at(-1)?.split(/\s+/gu) ?? [];
+  const blocks = Number.parseInt(fields[1] ?? "", 10);
+  const bytes = blocks * 1024;
+  return Number.isSafeInteger(bytes) && bytes > 0 ? bytes : 0;
 }
 
 export function parseFastbootVariable(name: string, value: string): string {

@@ -28,7 +28,8 @@ export const DEVELOPMENT_FIXTURE_COMPATIBILITY: WebCompatibilitySnapshot = Objec
   usbStable: true,
   recoveryCapable: true,
   hostBytesAvailable: 64_000_000_000,
-  systemPartitionBytes: 4_000_000_000
+  systemPartitionBytes: 4_000_000_000,
+  superPartitionBytes: 54_975_528_960
 });
 
 export function isExactDevelopmentFixture(deviceId: string, compatibility: WebCompatibilitySnapshot): boolean {

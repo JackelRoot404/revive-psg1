@@ -76,7 +76,8 @@ describe("public contracts", () => {
         systemBuildIncremental: "test", systemBuildType: "user", lineageVersion: "",
         bootloaderUnlocked: false, installationState: "stock_locked",
         usbStable: true, recoveryCapable: true, hostBytesAvailable: 8_000_000_000,
-        systemPartitionBytes: 4_000_000_000
+        systemPartitionBytes: 4_000_000_000,
+        superPartitionBytes: 54_975_528_960
       }
     };
     expect(webSessionCreateSchema.parse(input).hostOs).toBe("web");

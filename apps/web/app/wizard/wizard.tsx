@@ -353,7 +353,8 @@ async function createWebSession(scan: WebCompatibilityScan, developmentFixture =
       immutableSerialVerified: scan.immutableSerialVerified,
       fastbootUsbDescriptorVerified: scan.fastbootUsbDescriptorVerified,
       recoveryCapable: scan.recoveryCapable, hostBytesAvailable: scan.hostBytesAvailable,
-      systemPartitionBytes: scan.systemPartitionBytes
+      systemPartitionBytes: scan.systemPartitionBytes,
+      superPartitionBytes: scan.superPartitionBytes
     }
   });
 }
@@ -410,7 +411,7 @@ function messageOf(cause: unknown) {
   if ((cause instanceof DOMException && cause.name === "SecurityError") || (cause instanceof Error && /permissions policy|feature ["']?usb["']? is disallowed/iu.test(cause.message))) {
     return "WebUSB is blocked by this page or browser window. Open the wizard directly in a top-level Chrome or Edge tab (not an embedded preview), then reload it.";
   }
-  if (cause instanceof Error) return /reject|declin|cancel/iu.test(cause.message) ? "The request was cancelled. No device modification was made." : cause.message;
+  if (cause instanceof Error) return /(?:user (?:rejected|declined)|request (?:was )?cancelled)/iu.test(cause.message) ? "The request was cancelled. No device modification was made." : cause.message;
   return "The wizard stopped safely before making another change.";
 }
 function desktopChromium() { return !/Android|iPhone|iPad|iPod/iu.test(navigator.userAgent) && /Chrome|Chromium|Edg/iu.test(navigator.userAgent); }

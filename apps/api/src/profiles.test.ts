@@ -13,7 +13,10 @@ const profile: CompatibilityProfile = {
   androidApiLevels: [35],
   vendorApiLevels: [35],
   firmwarePatterns: ["playsolana-20260521-145647"],
-  partitionConstraints: { system: { minSize: 2_000_000_000, maxSize: 4_294_967_296 } },
+  partitionConstraints: {
+    system: { minSize: 2_000_000_000, maxSize: 4_294_967_296 },
+    super: { minSize: 50_000_000_000, maxSize: 60_000_000_000 }
+  },
   unlockCommand: "fastboot oem at-unlock-vboot",
   requiredArtifacts: [],
   expectedCapabilities: { controls: true, wifi: true, audio: true, fingerprint: false },
@@ -56,11 +59,13 @@ describe("web destructive preflight", () => {
     usbStable: true,
     recoveryCapable: true,
     hostBytesAvailable: 8_000_000_000,
-    systemPartitionBytes: 4_000_000_000
+    systemPartitionBytes: 4_000_000_000,
+    superPartitionBytes: 54_975_528_960
   };
 
   it("accepts a fully cross-checked device with adequate host capacity", () => expect(webPreflightMatches(profile, webSnapshot)).toBe(true));
   it("rejects a partition outside the signed profile", () => expect(webPreflightMatches(profile, { ...webSnapshot, systemPartitionBytes: 5_000_000_000 })).toBe(false));
+  it("rejects a super partition outside the signed profile", () => expect(webPreflightMatches(profile, { ...webSnapshot, superPartitionBytes: 49_000_000_000 })).toBe(false));
   it("rejects low battery unless the device is charging", () => expect(webPreflightMatches(profile, { ...webSnapshot, batteryPercent: 20, charging: false })).toBe(false));
   it("rejects inadequate browser storage", () => expect(webPreflightMatches(profile, { ...webSnapshot, hostBytesAvailable: 1_000_000_000 })).toBe(false));
 

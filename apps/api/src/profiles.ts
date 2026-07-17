@@ -50,13 +50,17 @@ export function webProfileMatches(profile: CompatibilityProfile, snapshot: WebCo
 
 export function webPreflightMatches(profile: CompatibilityProfile, snapshot: WebCompatibilitySnapshot): boolean {
   const system = profile.partitionConstraints.system;
+  const superPartition = profile.partitionConstraints.super;
   return snapshot.serialVerified
     && snapshot.immutableSerialVerified
     && snapshot.usbStable
     && snapshot.recoveryCapable
     && Boolean(system)
+    && Boolean(superPartition)
     && snapshot.systemPartitionBytes >= system!.minSize
     && snapshot.systemPartitionBytes <= system!.maxSize
+    && snapshot.superPartitionBytes >= superPartition!.minSize
+    && snapshot.superPartitionBytes <= superPartition!.maxSize
     && snapshot.hostBytesAvailable >= snapshot.systemPartitionBytes
     && (snapshot.batteryPercent >= 50 || snapshot.charging);
 }

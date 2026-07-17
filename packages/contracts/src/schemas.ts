@@ -42,7 +42,8 @@ export const webCompatibilitySnapshotSchema = compatibilitySnapshotSchema.extend
   usbStable: z.literal(true),
   recoveryCapable: z.literal(true),
   hostBytesAvailable: z.number().int().nonnegative(),
-  systemPartitionBytes: z.number().int().positive()
+  systemPartitionBytes: z.number().int().positive(),
+  superPartitionBytes: z.number().int().positive()
 });
 
 export const sessionCreateSchema = z.object({
