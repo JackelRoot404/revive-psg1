@@ -34,3 +34,11 @@ describe("production configuration", () => {
     expect(() => loadConfig(missing)).toThrow(/fallback Solana RPC/);
   });
 });
+
+describe("local configuration", () => {
+  it("uses safe localhost defaults so the API can start without copying env templates", () => {
+    const config = loadConfig({ NODE_ENV: "development" });
+    expect(config.publicApiUrl).toBe("http://localhost:8080");
+    expect(config.databaseUrl).toContain("localhost:5432/revive_psg1");
+  });
+});

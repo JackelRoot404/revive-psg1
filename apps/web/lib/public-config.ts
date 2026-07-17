@@ -12,7 +12,7 @@ function validUrl(value: string | undefined, protocols: string[] = [HTTPS]): str
 
 export function apiUrl(): string | null {
   return validUrl(
-    process.env.NEXT_PUBLIC_API_URL,
+    process.env.NEXT_PUBLIC_API_URL ?? (process.env.NODE_ENV === "development" ? "http://localhost:8080" : undefined),
     process.env.NODE_ENV === "development" ? [HTTPS, "http:"] : [HTTPS]
   );
 }
@@ -24,22 +24,11 @@ export function solanaRpcUrl(): string {
   ) ?? "https://api.mainnet-beta.solana.com";
 }
 
-export const releaseDownloads = {
-  macos: validUrl(process.env.NEXT_PUBLIC_MACOS_DOWNLOAD_URL),
-  windows: validUrl(process.env.NEXT_PUBLIC_WINDOWS_DOWNLOAD_URL)
-} as const;
-
 export const publicSalesState = process.env.NEXT_PUBLIC_SALES_STATE === "public"
   ? "public"
   : process.env.NEXT_PUBLIC_SALES_STATE === "beta"
     ? "beta"
     : "closed";
-
-// This is deliberately a source-level launch gate, not an environment toggle.
-// A copied checkout URL currently works on another computer. Do not enable checkout
-// until the desktop-local, signed, one-use browser proof in docs/checkout-pairing.md
-// is implemented and covered by end-to-end tests.
-export const SAME_COMPUTER_PAIRING_IMPLEMENTED = false;
 
 export const legalConfig = {
   entity: process.env.NEXT_PUBLIC_LEGAL_ENTITY?.trim() || "biccsdev",

@@ -7,16 +7,16 @@ const environmentSchema = z.object({
   PUBLIC_API_URL: z.string().url().default("http://localhost:8080"),
   PUBLIC_WEB_URL: z.string().url().default("http://localhost:3000"),
   ALLOWED_ORIGINS: z.string().default("http://localhost:3000"),
-  DATABASE_URL: z.string().min(1),
+  DATABASE_URL: z.string().min(1).default("postgresql://revive:revive@localhost:5432/revive_psg1"),
   DATABASE_CA_PATH: z.string().optional(),
   DATABASE_CA_PEM: z.string().optional(),
   VALKEY_URL: z.string().optional(),
-  SESSION_TOKEN_SECRET: z.string().min(32),
+  SESSION_TOKEN_SECRET: z.string().min(32).default("revive-local-development-session-secret-only"),
   LICENSE_PRIVATE_KEY_PEM: z.string().optional(),
   LICENSE_PUBLIC_KEY_PEM: z.string().optional(),
   LICENSE_KEY_ID: z.string().default("license-dev-1"),
   RELEASE_PUBLIC_KEY_PEM: z.string().optional(),
-  SOLANA_RPC_PRIMARY: z.string().url(),
+  SOLANA_RPC_PRIMARY: z.string().url().default("https://api.mainnet-beta.solana.com"),
   SOLANA_RPC_FALLBACK: z.string().url().optional(),
   TREASURY_WALLET: z.string().default(TREASURY_WALLET),
   SPACES_REGION: z.string().default("nyc3"),
@@ -56,6 +56,9 @@ export type Config = {
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Config {
   const value = environmentSchema.parse(environment);
   if (value.NODE_ENV === "production") {
+    if (value.SESSION_TOKEN_SECRET === "revive-local-development-session-secret-only") {
+      throw new Error("Production requires a unique session token secret");
+    }
     if (!value.LICENSE_PRIVATE_KEY_PEM || !value.LICENSE_PUBLIC_KEY_PEM || !value.RELEASE_PUBLIC_KEY_PEM) {
       throw new Error("Production requires license issuance keys and the offline release verification public key");
     }

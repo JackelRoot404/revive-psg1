@@ -11,9 +11,9 @@ Do not publish until beta entry criteria in `beta-runbook.md` pass, the applicat
 
 > Your PSG1 doesn’t have to sit in a drawer. 🎮
 >
-> I’m opening applications for 10 FREE Revive PSG1 safety-beta spots: a supervised test of a self-service desktop tool for converting compatible PSG1 handhelds into general-purpose Android gaming devices with physical controls, Wi-Fi, Aurora Store, F-Droid & RetroArch.
+> I’m opening applications for 10 FREE Revive PSG1 safety-beta spots: a supervised test of a self-service browser tool for converting compatible PSG1 handhelds into general-purpose Android gaming devices with physical controls, Wi-Fi, Aurora Store, F-Droid & RetroArch.
 >
-> This is an application for the safety beta—not a public installer release. 5 Windows + 5 macOS. Join the support/application server: https://discord.gg/QWYxkJgEHH
+> This is an application for the safety beta—not a public installer release. You’ll use desktop Chrome or Edge with your PSG1 connected over USB. Join the support/application server: https://discord.gg/QWYxkJgEHH
 
 **Post 2**
 
@@ -44,7 +44,7 @@ This is experimental, independent software and is **not affiliated with or endor
 You should apply only if you:
 
 - own the PSG1 and can back up everything on it;
-- have a supported Windows/macOS computer with administrator access;
+- have a Windows or macOS computer with current Chrome or Edge and a data-capable USB cable;
 - have a reliable data-capable USB cable and stable internet;
 - can follow the test plan, perform two cold boots, and share redacted diagnostics;
 - accept the wipe, unlocked-bootloader and experimental recovery risks; and
@@ -60,8 +60,8 @@ Never send a seed phrase, private key, Google password, device PIN, raw PSG1 ser
 1. Discord/X handle and an email used only for beta coordination.
 2. Country/time zone and usual hours available for a scheduled installation/recovery window.
 3. Do you personally own and physically possess the PSG1?
-4. Which host will you use: Windows or macOS? Include exact OS version and CPU architecture.
-5. Can you use an administrator account and install signed USB/desktop software?
+4. Which host will you use? Include exact OS version, browser version, and CPU architecture.
+5. On Windows, can you confirm the PSG1 USB modes use the required WinUSB driver when guided?
 6. What stock echOS build/incremental is shown in Settings? **Do not submit the serial number.**
 7. Has the PSG1 bootloader previously been unlocked, flashed, rooted, or repaired? Describe changes.
 8. Do controls, Wi-Fi, audio, storage, recovery, USB/ADB, and fingerprint work on stock echOS now?

@@ -1,10 +1,8 @@
 import Link from "next/link";
-import { publicSalesState, releaseDownloads } from "../lib/public-config";
 
 const capabilities = ["Physical controls", "Wi-Fi & audio", "Aurora Store", "F-Droid", "RetroArch", "Optional local GMS validation"];
 
 export default function Home() {
-  const downloadsOpen = publicSalesState !== "closed";
   return <main>
     <section className="hero">
       <div className="eyebrow"><span className="pulse" /> SELF-SERVICE WEB INSTALLER</div>
@@ -17,7 +15,12 @@ export default function Home() {
           <span className="screen-kicker">REVIVE / READY</span><strong>PSG1 detected</strong>
           <div className="progress"><i /></div><small>Hardware profile verified · no changes made</small>
         </div>
-        <div className="controls"><div className="dpad">✦</div><div className="buttons">A&nbsp;&nbsp; B<br/>X&nbsp;&nbsp; Y</div></div>
+        <div className="device-meta"><span className="speaker">••••</span><span className="solana-key">≋</span><span className="power-led" /></div>
+        <div className="controls">
+          <div className="dpad" aria-hidden="true"><i className="up"/><i className="right"/><i className="down"/><i className="left"/><i className="center"/></div>
+          <div className="system-buttons"><i/><i/></div>
+          <div className="face-buttons" aria-hidden="true"><i className="key-x">X</i><i className="key-a">A</i><i className="key-b">B</i><i className="key-y">Y</i></div>
+        </div>
       </div>
     </section>
 
@@ -47,18 +50,5 @@ export default function Home() {
       </div>
     </section>
 
-    <section id="download" className="section download-panel">
-      <div><span className="section-label">DEPRECATED DESKTOP FALLBACK</span><h2>Native recovery tools remain available.</h2><p>The web wizard is the primary experience. Signed macOS and Windows apps are retained as a deprecated fallback for unsupported browsers, Windows USB-driver limitations, and recovery.</p></div>
-      <div className="download-actions">
-        <DownloadLink platform="macOS" href={downloadsOpen ? releaseDownloads.macos : null} />
-        <DownloadLink platform="Windows" href={downloadsOpen ? releaseDownloads.windows : null} secondary />
-        <small>{downloadsOpen ? "Use only signed builds from revivepsg.com." : "Fallback downloads remain disabled until signed packages and official URLs are configured."} Never use an unofficial mirror.</small>
-      </div>
-    </section>
   </main>;
-}
-
-function DownloadLink({ platform, href, secondary = false }: { platform: string; href: string | null; secondary?: boolean }) {
-  if (!href) return <button className={`button ${secondary ? "ghost" : "primary"}`} disabled>{platform} · signed build unavailable</button>;
-  return <a className={`button ${secondary ? "ghost" : "primary"}`} href={href} rel="nofollow">Download for {platform}</a>;
 }

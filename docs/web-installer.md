@@ -1,6 +1,6 @@
 # Browser installer architecture
 
-Revive PSG1 is web-first. The native macOS and Windows applications remain present as deprecated recovery fallbacks; they must not be removed until browser transport and restoration pass the launch cohort.
+Revive PSG1 is delivered through a browser-based WebUSB wizard.
 
 ## Supported environment
 
@@ -34,7 +34,7 @@ The checked-in browser alpha implements the read-only ADB/Fastboot scan and paye
 - Userspace Fastbootd
 - USB VID/PID, interface class/subclass/protocol, endpoint directions, serial visibility, and Windows driver binding for every mode
 
-The destructive implementation must additionally support `max-download-size`, Android sparse images, resumable downloads, local SHA-256 verification, interruption-safe journaling, explicit wipe confirmation, and a tested native fallback.
+The destructive implementation must additionally support `max-download-size`, Android sparse images, resumable downloads, local SHA-256 verification, interruption-safe journaling, explicit wipe confirmation, and tested recovery paths.
 
 ## Browser supply-chain controls
 

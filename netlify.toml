@@ -17,13 +17,6 @@
     Content-Security-Policy = "default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self' data:; form-action 'none'; frame-ancestors 'none'; img-src 'self' data: blob:; object-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; upgrade-insecure-requests"
 
 [[headers]]
-  for = "/checkout/*"
-  [headers.values]
-    Cache-Control = "no-store, max-age=0"
-    Referrer-Policy = "no-referrer"
-    X-Robots-Tag = "noindex, nofollow, noarchive"
-
-[[headers]]
   for = "/wizard"
   [headers.values]
     Cache-Control = "no-store, max-age=0"

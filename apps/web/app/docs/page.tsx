@@ -19,7 +19,5 @@ export default function Docs() {
     <ul><li>The bootloader remains unlocked after conversion.</li><li>The device and replacement ROM are not Google-certified. Play Integrity, banking, DRM, and some games may refuse to run.</li><li>Fingerprint is unvalidated and not guaranteed; it is not a launch feature.</li><li>Restoration depends on a verified official echOS image for the exact device variant.</li><li>No Android ROM can guarantee that every application will work.</li></ul>
     <h2>Recovery and reinstall</h2>
     <p>Reconnect the physical PSG1 and run the scan to recover an existing entitlement. A factory reset, OS reinstall, or different computer does not consume a second license. Initial web-installer access follows the receipt-wallet proof requested at purchase; device-bound recovery credentials remain the long-term fallback if that wallet is later unavailable.</p>
-    <h2>Deprecated desktop fallback</h2>
-    <p>The signed macOS and Windows apps are not deleted. They remain available as a deprecated fallback for recovery and for computers whose USB driver configuration cannot expose every PSG1 mode to WebUSB.</p>
   </main>;
 }
