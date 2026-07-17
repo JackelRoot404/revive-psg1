@@ -205,10 +205,13 @@ export class WebFastbootPsg1 {
       const response = await this.raw.transferIn(this.inEndpoint, 64);
       if (response.status !== "ok" || !response.data) throw new Error("Fastboot response transfer failed.");
       const parsed = parseFastbootResponse(new Uint8Array(response.data.buffer, response.data.byteOffset, response.data.byteLength));
-      if (parsed.status === "INFO") { info.push(parsed.payload); continue; }
+      if (parsed.status === "INFO") {
+        if (parsed.payload) info.push(parsed.payload);
+        continue;
+      }
       if (parsed.status === "FAIL") throw new Error(`Fastboot rejected the command: ${parsed.payload || info.at(-1) || "unknown error"}`);
       if (parsed.status === "DATA") throw new Error("Unexpected Fastboot data phase during read-only web preflight.");
-      return parsed.payload || info.at(-1) || "";
+      return parsed.payload || info.join("\n");
     }
     throw new Error("Fastboot produced too many informational responses.");
   }
@@ -221,11 +224,12 @@ export async function finalizeWebScan(
 ): Promise<WebCompatibilityScan> {
   const fastbootSerial = normalizeSerial((await fastboot.getVariable("serialno")) || fastboot.normalizedUsbSerial);
   const usbSerial = fastboot.normalizedUsbSerial;
-  if (!fastbootSerial || fastbootSerial !== adbSerial) {
-    throw new Error("The ADB and Fastboot protocol serials do not match. No access was activated and no device modification was attempted.");
-  }
   if (usbSerial && usbSerial !== adbSerial) {
-    throw new Error("The Fastboot USB descriptor serial does not match the verified ADB serial. No access was activated and no device modification was attempted.");
+    throw new Error(`The Fastboot USB descriptor serial does not match the verified ADB serial (ADB length ${adbSerial.length}; USB length ${usbSerial.length}). No access was activated and no device modification was attempted.`);
+  }
+  if (!fastbootSerial || fastbootSerial !== adbSerial) {
+    const descriptorState = usbSerial ? "matches ADB" : "is unavailable";
+    throw new Error(`The ADB and Fastboot protocol serials do not match (ADB length ${adbSerial.length}; Fastboot length ${fastbootSerial.length}; Fastboot USB descriptor ${descriptorState}). No access was activated and no device modification was attempted.`);
   }
   const systemValue = await fastboot.getVariable("partition-size:system").catch(() => fastboot.getVariable("partition-size:system_a"));
   const systemPartitionBytes = parseFastbootSize(systemValue);
@@ -291,11 +295,11 @@ export function parseFastbootSize(value: string): number {
 
 export function parseFastbootVariable(name: string, value: string): string {
   const escapedName = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  return value
-    .trim()
-    .replace(/^\(bootloader\)\s*/iu, "")
-    .replace(new RegExp(`^${escapedName}\\s*:\\s*`, "iu"), "")
-    .trim();
+  const lines = value.split(/\r?\n/gu)
+    .map((line) => line.trim().replace(/^\(bootloader\)\s*/iu, ""))
+    .filter(Boolean);
+  const labeled = lines.map((line) => line.match(new RegExp(`^${escapedName}\\s*:\\s*(.+)$`, "iu"))?.[1]).find(Boolean);
+  return (labeled ?? lines[0] ?? "").trim();
 }
 
 function findFastbootInterface(configuration: USBConfiguration | null): { interfaceNumber: number; inEndpoint: number; outEndpoint: number } | null {

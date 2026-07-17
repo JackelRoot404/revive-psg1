@@ -22,6 +22,7 @@ describe("PSG1 WebUSB transport primitives", () => {
   it("removes getvar labels emitted through Fastboot INFO responses", () => {
     expect(parseFastbootVariable("serialno", "serialno: 2129c17e0292269d")).toBe("2129c17e0292269d");
     expect(parseFastbootVariable("partition-size:system", "(bootloader) partition-size:system: 0x1000")).toBe("0x1000");
+    expect(parseFastbootVariable("serialno", "unrelated status\n(bootloader) serialno: 2129c17e0292269d\n")).toBe("2129c17e0292269d");
     expect(parseFastbootVariable("unlocked", "yes")).toBe("yes");
   });
 
