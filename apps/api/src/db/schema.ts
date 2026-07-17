@@ -17,12 +17,13 @@ import { sql } from "drizzle-orm";
 export const hostOsEnum = pgEnum("host_os", ["windows", "macos", "web"]);
 export const sessionChannelEnum = pgEnum("session_channel", ["desktop", "web"]);
 export const walletChallengePurposeEnum = pgEnum("wallet_challenge_purpose", ["checkout", "web_installer"]);
-export const orderKindEnum = pgEnum("order_kind", ["paid", "promo"]);
+export const orderKindEnum = pgEnum("order_kind", ["paid", "promo", "early_access"]);
 export const orderStatusEnum = pgEnum("order_status", [
   "awaiting_payment",
   "awaiting_promo",
   "paid",
   "promo_redeemed",
+  "free_activated",
   "refunded",
   "expired"
 ]);

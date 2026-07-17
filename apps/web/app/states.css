@@ -37,6 +37,33 @@ footer > span { max-width: 520px; }
 .step-title h2 { margin: 0; font-size: 28px; }
 .scan-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0; }
 .scan-summary span { padding: 9px 11px; border: 1px solid var(--line); font: 11px monospace; color: #d6dbd7; }
+.early-access-card { margin: 22px 0 8px; padding: 22px; border: 1px solid var(--acid); background: linear-gradient(135deg, #bcff2b12, #916cff14); }
+.early-access-card strong { color: var(--acid); font-size: 20px; }
+.early-access-card p { margin-bottom: 0; color: var(--muted); line-height: 1.6; }
+
+.donation-banner { position: relative; width: 100%; overflow: hidden; border-block: 1px solid #d8ff7a; background: linear-gradient(112deg, #b9ff24 0%, #8dff62 48%, #bfa8ff 100%); color: #090d08; box-shadow: 0 22px 80px #a8ff3030; }
+.donation-banner::before { content: ""; position: absolute; inset: -60% 42% -90% -12%; background: radial-gradient(circle, #fff9, transparent 62%); pointer-events: none; }
+.donation-inner { position: relative; max-width: 1180px; margin: auto; padding: 42px 28px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 48px; align-items: center; }
+.donation-copy { max-width: 850px; }
+.donation-kicker { font: 800 11px ui-monospace, SFMono-Regular, monospace; letter-spacing: .16em; }
+.donation-banner h2 { margin: 10px 0 14px; font-size: clamp(36px, 5vw, 66px); line-height: .95; letter-spacing: -.055em; }
+.donation-banner p { margin: 8px 0; max-width: 780px; font-size: 16px; line-height: 1.55; color: #172016; }
+.donation-wallet { display: grid; gap: 6px; margin-top: 20px; }
+.donation-wallet span { font: 800 10px ui-monospace, SFMono-Regular, monospace; letter-spacing: .12em; text-transform: uppercase; }
+.donation-wallet code { width: fit-content; max-width: 100%; padding: 8px 10px; border: 1px solid #10180d40; background: #ffffff82; font-size: 12px; overflow-wrap: anywhere; }
+.donation-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.donation-actions .button { display: inline-flex; align-items: center; justify-content: center; border-color: #0d140b; }
+.button.donation-primary { background: #0b1009; color: #f6ffe8; }
+.button.donation-primary:hover { background: #211c37; }
+.button.donation-secondary { background: #ffffff6b; color: #0b1009; }
+.donation-qr { display: grid; justify-items: center; gap: 9px; padding: 13px; border: 1px solid #10180d52; background: #ffffffad; box-shadow: 0 16px 45px #33430f2e; transform: rotate(1.5deg); }
+.donation-qr canvas { display: block; width: 154px !important; height: 154px !important; }
+.donation-qr span { font: 800 9px ui-monospace, SFMono-Regular, monospace; letter-spacing: .12em; }
+.copy-toast { position: fixed; z-index: 50; left: 50%; bottom: 24px; display: flex; align-items: center; gap: 12px; min-width: 280px; padding: 14px 18px; border: 1px solid var(--acid); background: #101611f2; color: var(--ink); box-shadow: 0 18px 60px #000a; opacity: 0; transform: translate(-50%, 18px); pointer-events: none; transition: opacity .2s ease, transform .2s ease; }
+.copy-toast.visible { opacity: 1; transform: translate(-50%, 0); }
+.copy-toast > span { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--acid); color: #0b1009; font-weight: 900; }
+.copy-toast div { display: grid; gap: 2px; }
+.copy-toast small { color: var(--muted); }
 
 .device-screen { background: radial-gradient(circle at 70% 20%, #18271e, #0a0f0c 55%); border-radius: 9px; border-width: 7px; box-shadow: 0 0 0 1px #ffffff12, 0 8px 24px #0008 inset; }
 .device-meta { height: 8%; display: flex; align-items: center; justify-content: center; gap: 15px; color: #cbbcff99; font: 700 13px monospace; }
@@ -70,4 +97,10 @@ footer > span { max-width: 520px; }
   .wallet-list { grid-template-columns: 1fr; }
   .wizard-card { padding: 25px; }
   .wizard-shell { padding: 38px 14px; }
+  .donation-inner { padding: 34px 20px; grid-template-columns: 1fr; gap: 26px; }
+  .donation-banner h2 { font-size: 43px; }
+  .donation-qr { width: fit-content; transform: none; }
+  .donation-actions { display: grid; grid-template-columns: 1fr; }
+  .donation-actions .button { width: 100%; }
+  .copy-toast { width: calc(100% - 28px); min-width: 0; bottom: 14px; }
 }

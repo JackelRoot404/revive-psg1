@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { BETA_PROMO_CODE, LICENSE_PRICE_USDC, TREASURY_WALLET, USDC_AMOUNT_BASE_UNITS, browserProofMessage, compatibilityProfileSchema, deviceIdSchema, entitlementRecoverySchema, firmwareArtifactSchema, orderCreateSchema, releaseManifestSchema, sessionCreateSchema, sessionProofMessage, webCheckoutWalletChallengeMessage, webInstallerWalletChallengeMessage, webSessionCreateSchema, webSessionProofMessage } from "./index";
+import { BETA_PROMO_CODE, LICENSE_PRICE_USDC, TREASURY_WALLET, USDC_AMOUNT_BASE_UNITS, browserProofMessage, compatibilityProfileSchema, deviceIdSchema, earlyAccessActivateSchema, entitlementRecoverySchema, firmwareArtifactSchema, orderCreateSchema, releaseManifestSchema, sessionCreateSchema, sessionProofMessage, webCheckoutWalletChallengeMessage, webInstallerWalletChallengeMessage, webSessionCreateSchema, webSessionProofMessage } from "./index";
 
 describe("public contracts", () => {
   it("accepts a SHA-256 device id", () => {
@@ -21,6 +21,11 @@ describe("public contracts", () => {
     const legacy = orderCreateSchema.parse({ sessionId: "00000000-0000-4000-8000-000000000000", promoCode: BETA_PROMO_CODE });
     expect(legacy).not.toHaveProperty("promoCode");
     expect(() => orderCreateSchema.parse({ sessionId: "00000000-0000-4000-8000-000000000000", betaInviteToken: BETA_PROMO_CODE })).toThrow();
+  });
+
+  it("requires a concrete device session for free Early Access activation", () => {
+    expect(earlyAccessActivateSchema.parse({ sessionId: "00000000-0000-4000-8000-000000000000" }).sessionId).toMatch(/^00000000/);
+    expect(() => earlyAccessActivateSchema.parse({})).toThrow();
   });
 
   it("requires prefixed high-entropy beta and recovery credentials", () => {

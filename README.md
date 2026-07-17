@@ -2,7 +2,7 @@
 
 Self-service software for converting a compatible PlaySolana PSG1 into a general-purpose Android gaming handheld. The product is a Netlify-hosted Chrome/Edge WebUSB wizard backed by a Fastify API on DigitalOcean App Platform.
 
-> **Pre-beta / fail-closed.** Paid checkout, public downloads, and destructive installation remain disabled until the browser-proof suite, signing/provenance, restoration, dependency/legal work, and every launch gate pass. Do not distribute experimental images.
+> **Early Access / fail-closed installation.** Access is free while the project matures. Compatibility, signing/provenance, restoration, dependency/legal work, and every destructive-installation gate still fail closed. Do not distribute experimental images.
 
 ## What is implemented
 
@@ -72,7 +72,9 @@ See the [tester launch checklist](docs/tester-launch-checklist.md), [devnet paym
 5. Upload signed private artifacts to Spaces and insert their separately signed release manifest.
 6. Open tester access only after all launch-gate records carry reviewed evidence.
 
-The treasury is fixed to `EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y`. No treasury private key is needed or accepted by this system.
+Early Access is free when `EARLY_ACCESS_FREE=true` (the default). This creates a zero-value device-bound entitlement without wallet or payment requirements while preserving the paid checkout implementation. Set the same flag to `false` on the API and web deployment to restore paid enforcement.
+
+The optional-donation treasury is fixed to `EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y`. No treasury private key is needed or accepted by this system.
 
 ## Signing a profile or manifest
 

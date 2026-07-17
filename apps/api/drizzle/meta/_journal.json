@@ -57,6 +57,13 @@
       "when": 1784254070499,
       "tag": "0007_flowery_sandman",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784259987231,
+      "tag": "0008_typical_dust",
+      "breakpoints": true
     }
   ]
 }

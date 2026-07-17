@@ -5,6 +5,7 @@
 [build.environment]
   NODE_VERSION = "22"
   NETLIFY_NEXT_SKEW_PROTECTION = "true"
+  EARLY_ACCESS_FREE = "true"
 
 [[headers]]
   for = "/*"

@@ -36,6 +36,8 @@ services:
         value: "8080"
       - key: PUBLIC_SALES_ENABLED
         value: "false"
+      - key: EARLY_ACCESS_FREE
+        value: "true"
       - key: TREASURY_WALLET
         value: EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y
       - key: PUBLIC_WEB_URL

@@ -188,7 +188,7 @@ export async function finalizeWebScan(
   const fastbootSerial = normalizeSerial((await fastboot.getVariable("serialno")) || fastboot.normalizedUsbSerial);
   const usbSerial = fastboot.normalizedUsbSerial;
   if (!fastbootSerial || fastbootSerial !== adbSerial || (usbSerial && usbSerial !== adbSerial)) {
-    throw new Error("ADB, Fastboot, and USB descriptor serials do not match. No payment or modification is allowed.");
+    throw new Error("ADB, Fastboot, and USB descriptor serials do not match. No access was activated and no device modification was attempted.");
   }
   const systemValue = await fastboot.getVariable("partition-size:system").catch(() => fastboot.getVariable("partition-size:system_a"));
   const systemPartitionBytes = parseFastbootSize(systemValue);

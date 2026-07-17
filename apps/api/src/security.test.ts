@@ -7,7 +7,7 @@ const config: Config = {
   allowedOrigins: ["http://localhost:3000"], databaseUrl: "postgres://unused", sessionTokenSecret: "x".repeat(32),
   licenseKeyId: "test", solanaRpcPrimary: "http://localhost:8899",
   treasuryWallet: "EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y", spacesRegion: "nyc3", spacesBucket: "test",
-  crashReportsEnabled: true, publicSalesEnabled: false
+  crashReportsEnabled: true, earlyAccessFree: true, publicSalesEnabled: false
 };
 
 describe("TokenService", () => {

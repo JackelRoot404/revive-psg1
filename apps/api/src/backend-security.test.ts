@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { launchGateSetComplete, sanitizeTelemetryRecord, sanitizeText } from "./app";
+import { earlyAccessAllowed, launchGateSetComplete, sanitizeTelemetryRecord, sanitizeText } from "./app";
 
 const gateKeys = [
   "beta_licenses_redeemed_10", "windows_success_5", "macos_success_5", "all_beta_profiles_signed",
@@ -12,6 +12,16 @@ describe("backend security invariants", () => {
   it("keeps public sales closed before the tenth atomic beta redemption", () => expect(launchGateSetComplete(passedGates, 9)).toBe(false));
   it("keeps public sales closed when a checkbox has no evidence", () => expect(launchGateSetComplete(passedGates.map((gate, index) => index ? gate : { ...gate, evidence: {} }), 10)).toBe(false));
   it("opens the derived gate only with all evidence and ten redemptions", () => expect(launchGateSetComplete(passedGates, 10)).toBe(true));
+
+  it("allows free activation only while Early Access is enabled", () => {
+    expect(earlyAccessAllowed(true)).toBe(true);
+    expect(earlyAccessAllowed(false)).toBe(false);
+    expect(earlyAccessAllowed(false, "paid")).toBe(false);
+  });
+
+  it("keeps previously granted Early Access recoverable after paid mode returns", () => {
+    expect(earlyAccessAllowed(false, "early_access")).toBe(true);
+  });
 
   it("removes sensitive compatibility fields and serial/token values", () => {
     expect(sanitizeTelemetryRecord({

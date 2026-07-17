@@ -24,6 +24,7 @@ const environmentSchema = z.object({
   SPACES_ACCESS_KEY: z.string().optional(),
   SPACES_SECRET_KEY: z.string().optional(),
   CRASH_REPORTS_ENABLED: z.string().default("true").transform((value) => value === "true"),
+  EARLY_ACCESS_FREE: z.string().default("true").transform((value) => value === "true"),
   PUBLIC_SALES_ENABLED: z.string().default("false").transform((value) => value === "true")
 });
 
@@ -50,6 +51,7 @@ export type Config = {
   spacesAccessKey?: string;
   spacesSecretKey?: string;
   crashReportsEnabled: boolean;
+  earlyAccessFree: boolean;
   publicSalesEnabled: boolean;
 };
 
@@ -97,6 +99,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Config
     ...(value.SPACES_ACCESS_KEY ? { spacesAccessKey: value.SPACES_ACCESS_KEY } : {}),
     ...(value.SPACES_SECRET_KEY ? { spacesSecretKey: value.SPACES_SECRET_KEY } : {}),
     crashReportsEnabled: value.CRASH_REPORTS_ENABLED,
+    earlyAccessFree: value.EARLY_ACCESS_FREE,
     publicSalesEnabled: value.PUBLIC_SALES_ENABLED
   };
 }

@@ -7,6 +7,7 @@ Connect the repository root. `netlify.toml` builds the `@revive-psg1/web` worksp
 - `NEXT_PUBLIC_SITE_URL=https://revivepsg.com`
 - `NEXT_PUBLIC_API_URL=https://api.revivepsg.com`
 - `NEXT_PUBLIC_SOLANA_RPC_URL=<public browser-safe mainnet RPC>`
+- `EARLY_ACCESS_FREE=true` while the public Early Access program is free.
 - `NEXT_PUBLIC_SALES_STATE=closed` until launch review (`beta` or `public` afterward).
 - Signed HTTPS `NEXT_PUBLIC_MACOS_DOWNLOAD_URL` and `NEXT_PUBLIC_WINDOWS_DOWNLOAD_URL` only after publisher-signature verification.
 - `NEXT_PUBLIC_LEGAL_ENTITY=biccsdev` and `NEXT_PUBLIC_SUPPORT_URL=https://discord.gg/QWYxkJgEHH`.
@@ -41,7 +42,9 @@ npm run db:migrate
 npm run db:seed -w @revive-psg1/api
 ```
 
-Set `PUBLIC_SALES_ENABLED=true` only after two reviewers approve launch evidence. This flag is necessary but insufficient: the API also requires every row in `launch_gate_checks` to be passed. The web source-level same-computer checkout gate and `NEXT_PUBLIC_SALES_STATE` are reviewed separately.
+Keep `EARLY_ACCESS_FREE=true` on both Netlify and the API during free Early Access. The API remains authoritative: supported devices receive an atomic zero-value `early_access` entitlement and paid verification is bypassed. To return the product to paid mode, set `EARLY_ACCESS_FREE=false` on both deployments; no code or database change is required.
+
+Set `PUBLIC_SALES_ENABLED=true` only after two reviewers approve launch evidence and free Early Access has ended. This flag is necessary but insufficient: the API also requires every row in `launch_gate_checks` to be passed. The web source-level same-computer checkout gate and `NEXT_PUBLIC_SALES_STATE` are reviewed separately.
 
 ## DNS and traffic
 

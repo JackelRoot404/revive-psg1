@@ -1,6 +1,6 @@
 # Devnet payment E2E
 
-This standalone test creates a fresh payer, reference, and six-decimal token mint on canonical Solana devnet. It mints exactly 29 test tokens, transfers them to the associated token account owned by the configured Revive treasury public key, waits for finalization, and runs the API payment invariants against the parsed transaction.
+This standalone test creates a fresh payer, reference, and six-decimal token mint on canonical Solana devnet. It mints exactly 19 test tokens, transfers them to the associated token account owned by the configured Revive treasury public key, waits for finalization, and runs the preserved paid-mode API invariants against the parsed transaction.
 
 No mainnet token or treasury private key is used. The temporary payer key is deleted at the end. The development validator requires both `REVIVE_DEVNET_PAYMENT_E2E=1` and the canonical devnet genesis hash. The production verifier is also run and must reject the ephemeral mint as non-official USDC.
 

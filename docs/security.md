@@ -19,6 +19,8 @@ Private beta access likewise uses high-entropy `rpb_…` invites whose digests a
 
 ## Payments
 
+During free Early Access, `EARLY_ACCESS_FREE=true` makes the API issue zero-value `early_access` entitlements only after a supported, cross-checked physical-device web session. No wallet or payment proof is requested. The payment verifier and paid order routes remain unchanged and return to enforcement when the flag is false.
+
 The web wizard proves its physical-device context by cross-checking ADB, USB-descriptor, and Fastboot serials before creating a signed ephemeral browser session. Wallet checkout is permitted only for a supported device session. After finalized payment, a separate challenge bound to `purpose:web-installer`, the order, license, device, wallet, nonce, and expiration must be signed by the receipt wallet before the API issues a ten-minute installer token. Checkout signatures cannot be replayed as installer authorization.
 
 After desktop proof, the browser discovers compatible Wallet Standard extensions injected into that browser. It accepts only Solana-mainnet accounts with message signing and legacy transaction signing, and exposes no address field, mobile QR, or wallet deep-link path. Wallet authorization signs a bounded domain/session/device/pairing-key challenge. The transfer then requires the same wallet.

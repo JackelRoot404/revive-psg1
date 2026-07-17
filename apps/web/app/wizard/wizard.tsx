@@ -29,7 +29,7 @@ const API = apiUrl();
 const WEB_VERSION = "0.2.0-web-alpha";
 const LICENSE_PRICE_LABEL = Number(LICENSE_PRICE_USDC).toFixed(2);
 
-type Stage = "intro" | "adb" | "bootloader" | "fastboot" | "session" | "unsupported" | "wallet" | "authorize" | "order" | "paying" | "verifying" | "paymentPending" | "installerProof" | "ready";
+type Stage = "intro" | "adb" | "bootloader" | "fastboot" | "session" | "unsupported" | "freeAccess" | "activatingFree" | "wallet" | "authorize" | "order" | "paying" | "verifying" | "paymentPending" | "installerProof" | "ready";
 type Session = { sessionId: string; supported: boolean; browserToken: string; profileId: string | null; expiresAt: string };
 type Order = {
   orderId: string;
@@ -43,7 +43,7 @@ type Order = {
 type Pending = { orderId: string; kind: "paid" | "promo"; transactionSignature?: string };
 type ReleaseAccess = { manifest?: { version?: string }; profile?: { id?: string } };
 
-export function Wizard() {
+export function Wizard({ earlyAccessFree }: { earlyAccessFree: boolean }) {
   const [stage, setStage] = useState<Stage>("intro");
   const [scan, setScan] = useState<WebCompatibilityScan | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -59,7 +59,7 @@ export function Wizard() {
   const [release, setRelease] = useState<ReleaseAccess | null>(null);
   const [error, setError] = useState("");
 
-  useEffect(() => watchCompatibleWallets(setWallets), []);
+  useEffect(() => earlyAccessFree ? undefined : watchCompatibleWallets(setWallets), [earlyAccessFree]);
   useEffect(() => {
     if (!wallet) return;
     return watchWalletAccounts(wallet, (accounts) => {
@@ -97,7 +97,7 @@ export function Wizard() {
       fastbootRebooted = true;
       await fastboot.close().catch(() => undefined);
       fastboot = null;
-      setStage(created.supported ? "wallet" : "unsupported");
+      setStage(created.supported ? earlyAccessFree ? "freeAccess" : "wallet" : "unsupported");
     } catch (cause) {
       setError(messageOf(cause));
       setStage("intro");
@@ -105,6 +105,28 @@ export function Wizard() {
       await adb?.close().catch(() => undefined);
       if (fastboot && !fastbootRebooted) await fastboot.reboot().catch(() => undefined);
       await fastboot?.close().catch(() => undefined);
+    }
+  }
+
+  async function activateEarlyAccess() {
+    if (!session) return;
+    setError("");
+    setStage("activatingFree");
+    try {
+      const access = await request<{ orderId: string; licenseId: string; webInstallerToken: string }>(
+        "POST",
+        "/v1/early-access/activate",
+        session.browserToken,
+        { sessionId: session.sessionId }
+      );
+      setOrderId(access.orderId);
+      setLicenseId(access.licenseId);
+      const authorizedRelease = await request<ReleaseAccess>("GET", "/v1/releases/stable", access.webInstallerToken);
+      setRelease(authorizedRelease);
+      setStage("ready");
+    } catch (cause) {
+      setError(messageOf(cause));
+      setStage("freeAccess");
     }
   }
 
@@ -230,7 +252,7 @@ export function Wizard() {
   }
 
   return <section className="wizard-card">
-    <div className="wizard-heading"><span className="section-label">WEBUSB ALPHA</span><h1>Revive in your browser.</h1><p>Nothing is installed on your computer. The free scan runs before checkout and does not unlock, wipe, or flash your PSG1.</p></div>
+    <div className="wizard-heading"><span className="section-label">{earlyAccessFree ? "FREE EARLY ACCESS" : "WEBUSB ALPHA"}</span><h1>Revive in your browser.</h1><p>Nothing is installed on your computer. The compatibility scan is free and does not unlock, wipe, or flash your PSG1.</p></div>
 
     {!browserReady && <div className="blocked"><strong>Desktop Chrome or Edge required</strong><p>WebUSB is unavailable in this browser. Open this page in current Chrome or Edge on macOS or Windows.</p></div>}
     {!API && <div className="blocked"><strong>API not configured</strong><p>The secure Revive API is not available, so scanning cannot begin.</p></div>}
@@ -245,16 +267,19 @@ export function Wizard() {
 
     {stage === "unsupported" && <div className="blocked"><strong>This firmware is not supported yet</strong><p>The PSG1 was returned to Android. It was not charged, bound, unlocked, wiped, or flashed.</p></div>}
 
-    {stage === "wallet" && <div className="wizard-step"><Step number="2" title="Connect the paying wallet" /><p>Phantom and Solflare are supported through Solana Wallet Standard. The extension must be installed in this same browser.</p>{wallets.length ? <div className="wallet-list">{wallets.map((candidate) => <button className={`button ${wallet?.name === candidate.name ? "primary" : "ghost"}`} key={candidate.name} onClick={() => chooseWallet(candidate)}>{wallet?.name === candidate.name ? "Connected: " : "Connect "}{candidate.name}</button>)}</div> : <div className="pending"><strong>No compatible wallet found</strong><p>Install or unlock Phantom or Solflare, then reload this page.</p></div>}{account && <><p className="wallet-account">Account <code>{shortAddress(account.address)}</code></p><button className="button primary wide" onClick={authorizeCheckout}>Sign checkout authorization</button></>}</div>}
+    {stage === "freeAccess" && <div className="wizard-step"><Step number="2" title="Activate free Early Access" /><div className="early-access-card"><strong>Free while Revive matures</strong><p>No wallet, payment, promo code, or purchase is required. Access remains bound to this PSG1 so future reinstalls can recognize it.</p></div><button className="button primary wide" onClick={activateEarlyAccess}>Start unlocking — free</button><small>Donations are optional and never affect compatibility or installer access.</small></div>}
+    {stage === "activatingFree" && <Progress title="Activating free device access…" />}
+
+    {!earlyAccessFree && stage === "wallet" && <div className="wizard-step"><Step number="2" title="Connect the paying wallet" /><p>Phantom and Solflare are supported through Solana Wallet Standard. The extension must be installed in this same browser.</p>{wallets.length ? <div className="wallet-list">{wallets.map((candidate) => <button className={`button ${wallet?.name === candidate.name ? "primary" : "ghost"}`} key={candidate.name} onClick={() => chooseWallet(candidate)}>{wallet?.name === candidate.name ? "Connected: " : "Connect "}{candidate.name}</button>)}</div> : <div className="pending"><strong>No compatible wallet found</strong><p>Install or unlock Phantom or Solflare, then reload this page.</p></div>}{account && <><p className="wallet-account">Account <code>{shortAddress(account.address)}</code></p><button className="button primary wide" onClick={authorizeCheckout}>Sign checkout authorization</button></>}</div>}
     {stage === "authorize" && <Progress title="Confirm the non-transaction authorization message…" />}
     {stage === "order" && <div className="wizard-step"><Step number="3" title="License this PSG1" /><div className="order-summary"><span>Permanent device license</span><strong>{LICENSE_PRICE_LABEL} USDC</strong><small>Solana mainnet · official USDC mint · released updates included</small></div><label className="field">Private beta invite (optional)<input value={promo} onChange={(event) => setPromo(event.target.value)} placeholder="rpb_…" autoComplete="off" spellCheck={false} /></label><button className="button primary wide" disabled={!promo.trim() && !canCreatePaidOrder} onClick={createOrder}>{promo.trim() ? "Redeem beta invite" : canCreatePaidOrder ? `Pay ${Number(LICENSE_PRICE_USDC)} USDC` : "Public sales are not open"}</button><small>Normal refunds remain available until the first destructive command begins. The current WebUSB alpha does not issue that command.</small></div>}
     {(stage === "paying" || stage === "verifying") && <Progress title={stage === "paying" ? "Confirm the exact USDC payment…" : "Waiting for finalized Solana verification—do not pay again…"} />}
     {stage === "paymentPending" && <div className="pending"><strong>Verification is incomplete</strong><p>If your wallet shows a transaction, do not pay again. Retry the same order.</p><button className="button primary wide" onClick={retryVerification}>Retry verification</button></div>}
     {stage === "installerProof" && <Progress title="Sign once more to prove you control the wallet that paid…" />}
-    {stage === "ready" && <div className="success"><strong>✓ Web installer access authorized</strong><p>The device license and signed release are valid. Destructive browser flashing remains disabled in this alpha until all PSG1 USB modes pass the Mac and Windows safety cohort.</p><dl className="receipt"><dt>License</dt><dd>{licenseId}</dd><dt>Order</dt><dd>{orderId}</dd><dt>Release</dt><dd>{release?.manifest?.version ?? "authorized"}</dd></dl><small>Your short-lived installer token was kept only in memory and has not been stored in the browser.</small></div>}
+    {stage === "ready" && <div className="success"><strong>✓ {earlyAccessFree ? "Free Early Access activated" : "Web installer access authorized"}</strong><p>The device entitlement and signed release are valid. Destructive browser flashing remains disabled in this alpha until all PSG1 USB modes pass the Mac and Windows safety cohort.</p><dl className="receipt"><dt>Access</dt><dd>{licenseId}</dd><dt>Activation</dt><dd>{orderId}</dd><dt>Release</dt><dd>{release?.manifest?.version ?? "authorized"}</dd></dl><small>Your short-lived installer token was kept only in memory and has not been stored in the browser.</small></div>}
 
     {error && <p className="error" role="alert">{error}</p>}
-    <div className="checkout-security"><span>Read-only scan first</span><span>Payer signature required</span><span>Device-bound license</span></div>
+    <div className="checkout-security"><span>Read-only scan first</span><span>{earlyAccessFree ? "No purchase required" : "Payer signature required"}</span><span>Device-bound access</span></div>
   </section>;
 }
 
@@ -316,7 +341,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   PAID_ORDER_NOT_FOUND: "A finalized paid order for this wallet and PSG1 was not found.",
   ACTIVE_LICENSE_REQUIRED: "The device license is not active.",
   WALLET_SIGNATURE_INVALID: "The wallet signature could not be verified.",
-  NO_STABLE_RELEASE: "No signed stable release is available for this PSG1 profile yet."
+  NO_STABLE_RELEASE: "No signed stable release is available for this PSG1 profile yet.",
+  EARLY_ACCESS_DISABLED: "Free Early Access is no longer accepting new activations."
 };
 function messageOf(cause: unknown) {
   if (cause instanceof ApiError) return ERROR_MESSAGES[cause.code] ?? cause.message;
@@ -324,7 +350,7 @@ function messageOf(cause: unknown) {
   if ((cause instanceof DOMException && cause.name === "SecurityError") || (cause instanceof Error && /permissions policy|feature ["']?usb["']? is disallowed/iu.test(cause.message))) {
     return "WebUSB is blocked by this page or browser window. Open the wizard directly in a top-level Chrome or Edge tab (not an embedded preview), then reload it.";
   }
-  if (cause instanceof Error) return /reject|declin|cancel/iu.test(cause.message) ? "The request was cancelled. No new payment or modification was made." : cause.message;
+  if (cause instanceof Error) return /reject|declin|cancel/iu.test(cause.message) ? "The request was cancelled. No device modification was made." : cause.message;
   return "The wizard stopped safely before making another change.";
 }
 function desktopChromium() { return !/Android|iPhone|iPad|iPod/iu.test(navigator.userAgent) && /Chrome|Chromium|Edg/iu.test(navigator.userAgent); }

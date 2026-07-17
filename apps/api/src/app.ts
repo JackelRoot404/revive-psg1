@@ -21,6 +21,7 @@ import {
   compatibilityReportSchema,
   crashReportSchema,
   deviceIdSchema,
+  earlyAccessActivateSchema,
   entitlementRecoverySchema,
   licenseClaimMessage,
   licenseClaimSchema,
@@ -221,6 +222,96 @@ export async function buildApp(dependencies: Dependencies) {
       profileSignature: matched?.signature ?? null,
       browserToken,
       expiresAt: expiresAt.toISOString()
+    });
+  });
+
+  app.post("/v1/early-access/activate", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
+    const auth = await requireToken(request, tokens, "browser-checkout");
+    const input = earlyAccessActivateSchema.parse(request.body);
+    if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
+    const session = await activeSession(db, input.sessionId);
+    if (!session?.supported) return reply.code(409).send({ code: "UNSUPPORTED_FIRMWARE" });
+    if (session.channel !== "web" || auth.sub !== session.pairingPublicKey) {
+      return reply.code(403).send({ code: "WEB_PAIRING_REQUIRED" });
+    }
+    await enforceDistributedLimit(redis, `early-access:device:${session.deviceId}`, 10, 60 * 60);
+
+    let license = await activeLicenseForDevice(db, session.deviceId);
+    if (license && !config.earlyAccessFree) {
+      const [existingOrder] = await db.select({ kind: orders.kind }).from(orders).where(eq(orders.id, license.orderId)).limit(1);
+      if (!earlyAccessAllowed(config.earlyAccessFree, existingOrder?.kind)) return reply.code(404).send({ code: "EARLY_ACCESS_DISABLED" });
+    }
+    if (!license && !earlyAccessAllowed(config.earlyAccessFree)) return reply.code(404).send({ code: "EARLY_ACCESS_DISABLED" });
+
+    let created = false;
+    if (!license) {
+      const orderId = randomUUID();
+      const licenseId = randomUUID();
+      try {
+        await db.transaction(async (tx) => {
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${session.deviceId}, 0))`);
+          const [raceWinner] = await tx.select({ id: licenses.id }).from(licenses).where(and(
+            eq(licenses.deviceId, session.deviceId),
+            eq(licenses.status, "active")
+          )).limit(1);
+          if (raceWinner) return;
+          if (!session.profileId) throw apiError("SESSION_PROFILE_MISSING", 409);
+          await tx.insert(orders).values({
+            id: orderId,
+            sessionId: session.id,
+            deviceId: session.deviceId,
+            wallet: session.pairingPublicKey,
+            kind: "early_access",
+            status: "free_activated",
+            reference: randomSolanaAddress(),
+            amountBaseUnits: 0n,
+            mint: SOLANA_USDC_MINT,
+            treasury: config.treasuryWallet,
+            expiresAt: session.expiresAt
+          });
+          await tx.insert(devices).values({
+            id: session.deviceId,
+            profileId: session.profileId,
+            serialVerified: true,
+            licensedAt: new Date()
+          }).onConflictDoUpdate({
+            target: devices.id,
+            set: { profileId: session.profileId, serialVerified: true, lastSeenAt: new Date(), licensedAt: new Date() }
+          });
+          await tx.insert(licenses).values({
+            id: licenseId,
+            deviceId: session.deviceId,
+            orderId,
+            receiptWallet: session.pairingPublicKey
+          });
+          created = true;
+        });
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+      }
+      license = await activeLicenseForDevice(db, session.deviceId);
+    }
+    if (!license) throw new Error("Early Access activation did not produce an active device entitlement");
+
+    const webInstallerToken = await tokens.issueSessionToken({
+      audience: "web-installer",
+      subject: license.id,
+      sessionId: session.id,
+      deviceId: session.deviceId,
+      expiresIn: "10m"
+    });
+    await audit(db, created ? "early_access.activated" : "early_access.restored", {
+      actor: session.deviceId,
+      subjectId: license.id,
+      payload: { orderId: license.orderId }
+    });
+    return reply.code(created ? 201 : 200).send({
+      earlyAccessFree: true,
+      alreadyLicensed: !created,
+      orderId: license.orderId,
+      licenseId: license.id,
+      webInstallerToken,
+      expiresInSeconds: 600
     });
   });
 
@@ -632,7 +723,7 @@ export async function buildApp(dependencies: Dependencies) {
     if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
     const session = await activeSession(db, input.sessionId);
     const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-    if (!session || !order || order.deviceId !== session.deviceId || !["paid", "promo_redeemed"].includes(order.status)) {
+    if (!session || !order || order.deviceId !== session.deviceId || !["paid", "promo_redeemed", "free_activated"].includes(order.status)) {
       return reply.code(409).send({ code: "ORDER_NOT_LICENSEABLE" });
     }
     const message = licenseClaimMessage({ orderId, sessionId: session.id, deviceId: session.deviceId });
@@ -728,7 +819,7 @@ export async function buildApp(dependencies: Dependencies) {
     const [license] = await db.select().from(licenses).where(eq(licenses.id, id)).limit(1);
     if (!license || license.status !== "active" || auth.sub !== id || auth.deviceId !== license.deviceId) return reply.code(404).send({ code: "LICENSE_NOT_FOUND" });
     const [order] = await db.select().from(orders).where(eq(orders.id, license.orderId)).limit(1);
-    if (order?.kind === "promo") return reply.code(409).send({ code: "PROMO_HAS_NO_REFUND_VALUE" });
+    if (order?.kind !== "paid") return reply.code(409).send({ code: "FREE_ACCESS_HAS_NO_REFUND_VALUE" });
     const refundId = randomUUID();
     const isReview = Boolean(license.modificationStartedAt);
     if (isReview && input.category !== "suspected_incompatibility") {
@@ -945,6 +1036,10 @@ export function launchGateSetComplete(
       && Boolean(check.verifiedAt)
       && isNonEmptyEvidence(check.evidence);
   });
+}
+
+export function earlyAccessAllowed(enabled: boolean, existingOrderKind?: "paid" | "promo" | "early_access"): boolean {
+  return enabled || existingOrderKind === "early_access";
 }
 
 function isNonEmptyEvidence(value: unknown): boolean {

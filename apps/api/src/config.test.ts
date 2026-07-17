@@ -40,5 +40,10 @@ describe("local configuration", () => {
     const config = loadConfig({ NODE_ENV: "development" });
     expect(config.publicApiUrl).toBe("http://localhost:8080");
     expect(config.databaseUrl).toContain("localhost:5432/revive_psg1");
+    expect(config.earlyAccessFree).toBe(true);
+  });
+
+  it("restores paid enforcement with one feature flag", () => {
+    expect(loadConfig({ NODE_ENV: "development", EARLY_ACCESS_FREE: "false" }).earlyAccessFree).toBe(false);
   });
 });

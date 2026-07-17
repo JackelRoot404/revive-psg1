@@ -91,6 +91,10 @@ export const orderCreateSchema = z.object({
   betaInviteToken: betaInviteTokenSchema.optional()
 });
 
+export const earlyAccessActivateSchema = z.object({
+  sessionId: uuidSchema
+});
+
 export const entitlementRecoverySchema = z.object({
   recoveryCredential: recoveryCredentialSchema
 });

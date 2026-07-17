@@ -22,10 +22,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         <header className="site-header">
           <Link className="brand" href="/"><span className="brand-mark">R</span> Revive PSG1</Link>
-          <nav aria-label="Primary"><Link href="/wizard">Web wizard</Link><Link href="/docs">How it works</Link><Link href="/license">License status</Link></nav>
+          <nav aria-label="Primary"><Link href="/wizard">Start Unlocking</Link><Link href="/docs">How it works</Link><Link href="/license">Early Access</Link></nav>
         </header>
         {children}
-        <footer><span>Independent PSG1 recovery tooling by biccsdev. Not affiliated with PlaySolana or Google.</span><nav><a href={legalConfig.supportUrl}>Support</a><Link href="/license">License status</Link><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></nav></footer>
+        <footer><span>Independent PSG1 recovery tooling by biccsdev. Not affiliated with PlaySolana or Google.</span><nav><a href={legalConfig.supportUrl}>Support</a><Link href="/license">Early Access</Link><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></nav></footer>
       </body>
     </html>
   );
