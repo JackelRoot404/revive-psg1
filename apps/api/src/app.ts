@@ -10,6 +10,7 @@ import {
   BETA_PROMO_LIMIT,
   DEVELOPMENT_FIXTURE_DEVICE_ID,
   DEVELOPMENT_FIXTURE_PROFILE_ID,
+  DEVELOPMENT_MODIFIED_PROFILE_ID,
   LICENSE_PRICE_USDC,
   SESSION_TTL_SECONDS,
   SOLANA_USDC_MINT,
@@ -26,6 +27,7 @@ import {
   earlyAccessActivateSchema,
   entitlementRecoverySchema,
   isExactDevelopmentFixture,
+  isSafeDevelopmentModifiedScan,
   licenseClaimMessage,
   licenseClaimSchema,
   orderCreateSchema,
@@ -179,6 +181,10 @@ export async function buildApp(dependencies: Dependencies) {
       && config.developmentHardwareFixture
       && config.nodeEnv === "development"
       && isExactDevelopmentFixture(input.deviceId, input.compatibility);
+    const developmentModified = !input.developmentFixture
+      && config.developmentHardwareFixture
+      && config.nodeEnv === "development"
+      && isSafeDevelopmentModifiedScan(input.compatibility);
     if (input.developmentFixture && !developmentFixture) {
       return reply.code(403).send({ code: "DEVELOPMENT_FIXTURE_FORBIDDEN" });
     }
@@ -189,7 +195,7 @@ export async function buildApp(dependencies: Dependencies) {
     if (!verifyEd25519Base58({ publicKey: input.pairingPublicKey, signature: input.pairingProof, message: proofMessage })) {
       return reply.code(401).send({ code: "INVALID_PAIRING_PROOF", message: "Web pairing proof is invalid" });
     }
-    const activeProfiles = developmentFixture ? [] : await db.select().from(compatibilityProfiles).where(eq(compatibilityProfiles.active, true));
+    const activeProfiles = developmentFixture || developmentModified ? [] : await db.select().from(compatibilityProfiles).where(eq(compatibilityProfiles.active, true));
     const matched = activeProfiles.find((row) => {
       const parsed = compatibilityProfileSchema.safeParse({ ...(row.signedDocument as object), signature: row.signature });
       return parsed.success
@@ -197,8 +203,8 @@ export async function buildApp(dependencies: Dependencies) {
         && webProfileMatches(parsed.data, input.compatibility)
         && webPreflightMatches(parsed.data, input.compatibility);
     });
-    const profileId = developmentFixture ? DEVELOPMENT_FIXTURE_PROFILE_ID : matched?.id;
-    const supported = developmentFixture || Boolean(matched);
+    const profileId = developmentFixture ? DEVELOPMENT_FIXTURE_PROFILE_ID : developmentModified ? DEVELOPMENT_MODIFIED_PROFILE_ID : matched?.id;
+    const supported = developmentFixture || developmentModified || Boolean(matched);
     const id = randomUUID();
     const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
     try {
@@ -225,7 +231,7 @@ export async function buildApp(dependencies: Dependencies) {
       sessionId: id,
       deviceId: input.deviceId
     });
-    await audit(db, "session.created", { actor: input.deviceId, subjectId: id, payload: { channel: "web", supported, profileId, developmentFixture } });
+    await audit(db, "session.created", { actor: input.deviceId, subjectId: id, payload: { channel: "web", supported, profileId, developmentFixture, developmentModified } });
     return reply.code(201).send({
       sessionId: id,
       supported,
@@ -881,6 +887,7 @@ export async function buildApp(dependencies: Dependencies) {
     const auth = await verifyInstallerAccess(request, tokens);
     const license = await activeLicenseForDevice(db, String(auth.deviceId));
     if (!license || license.id !== auth.sub) return reply.code(403).send({ code: "LICENSE_INACTIVE" });
+    const [device] = await db.select().from(devices).where(eq(devices.id, license.deviceId)).limit(1);
     if (config.developmentHardwareFixture && config.nodeEnv === "development" && license.deviceId === DEVELOPMENT_FIXTURE_DEVICE_ID) {
       return {
         manifest: { version: "development-fixture", channel: "diagnostics-only", artifacts: [] },
@@ -891,7 +898,16 @@ export async function buildApp(dependencies: Dependencies) {
         destructiveAllowed: false
       };
     }
-    const [device] = await db.select().from(devices).where(eq(devices.id, license.deviceId)).limit(1);
+    if (config.developmentHardwareFixture && config.nodeEnv === "development" && device?.profileId === DEVELOPMENT_MODIFIED_PROFILE_ID) {
+      return {
+        manifest: { version: "development-modified-safe-test", channel: "diagnostics-only", artifacts: [] },
+        signature: "development-only-no-release-signature",
+        profile: { id: DEVELOPMENT_MODIFIED_PROFILE_ID, mode: "already-modified-safe-test" },
+        profileSignature: "development-only-no-profile-signature",
+        downloadUrls: {},
+        destructiveAllowed: false
+      };
+    }
     if (!device?.profileId) return reply.code(409).send({ code: "DEVICE_PROFILE_MISSING" });
     const [profile] = await db.select().from(compatibilityProfiles).where(and(eq(compatibilityProfiles.id, device.profileId), eq(compatibilityProfiles.active, true))).limit(1);
     if (!profile || !verifySignedDocument(profile.signedDocument, profile.signature, config.releasePublicKeyPem)) return reply.code(409).send({ code: "DEVICE_PROFILE_INACTIVE" });

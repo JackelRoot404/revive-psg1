@@ -2,6 +2,7 @@ import type { WebCompatibilitySnapshot } from "./schemas";
 
 export const DEVELOPMENT_FIXTURE_DEVICE_ID = "e9074fc42bae73eb1d2b5d8bf65f29da39ced1e3174cdcde596ab84687553070";
 export const DEVELOPMENT_FIXTURE_PROFILE_ID = "dev-fixture-psg1-stock-locked";
+export const DEVELOPMENT_MODIFIED_PROFILE_ID = "dev-safe-psg1-already-modified";
 
 export const DEVELOPMENT_FIXTURE_COMPATIBILITY: WebCompatibilitySnapshot = Object.freeze({
   product: "PSG1",
@@ -34,4 +35,17 @@ export function isExactDevelopmentFixture(deviceId: string, compatibility: WebCo
     && Object.entries(DEVELOPMENT_FIXTURE_COMPATIBILITY).every(([key, value]) =>
       compatibility[key as keyof WebCompatibilitySnapshot] === value
     );
+}
+
+export function isSafeDevelopmentModifiedScan(compatibility: WebCompatibilitySnapshot): boolean {
+  return compatibility.product === "PSG1"
+    && /^PSG1$/iu.test(compatibility.model)
+    && /RK3588S/iu.test(`${compatibility.board} ${compatibility.hardware}`)
+    && compatibility.installationState === "already_modified"
+    && compatibility.bootloaderUnlocked
+    && Boolean(compatibility.lineageVersion.trim())
+    && compatibility.serialVerified
+    && compatibility.immutableSerialVerified
+    && compatibility.usbStable
+    && compatibility.recoveryCapable;
 }

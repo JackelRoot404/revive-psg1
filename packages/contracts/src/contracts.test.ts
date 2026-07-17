@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { BETA_PROMO_CODE, DEVELOPMENT_FIXTURE_COMPATIBILITY, DEVELOPMENT_FIXTURE_DEVICE_ID, LICENSE_PRICE_USDC, TREASURY_WALLET, USDC_AMOUNT_BASE_UNITS, browserProofMessage, compatibilityProfileSchema, deviceIdSchema, earlyAccessActivateSchema, entitlementRecoverySchema, firmwareArtifactSchema, isExactDevelopmentFixture, orderCreateSchema, releaseManifestSchema, sessionCreateSchema, sessionProofMessage, webCheckoutWalletChallengeMessage, webInstallerWalletChallengeMessage, webSessionCreateSchema, webSessionProofMessage } from "./index";
+import { BETA_PROMO_CODE, DEVELOPMENT_FIXTURE_COMPATIBILITY, DEVELOPMENT_FIXTURE_DEVICE_ID, LICENSE_PRICE_USDC, TREASURY_WALLET, USDC_AMOUNT_BASE_UNITS, browserProofMessage, compatibilityProfileSchema, deviceIdSchema, earlyAccessActivateSchema, entitlementRecoverySchema, firmwareArtifactSchema, isExactDevelopmentFixture, isSafeDevelopmentModifiedScan, orderCreateSchema, releaseManifestSchema, sessionCreateSchema, sessionProofMessage, webCheckoutWalletChallengeMessage, webInstallerWalletChallengeMessage, webSessionCreateSchema, webSessionProofMessage } from "./index";
 
 describe("public contracts", () => {
   it("accepts a SHA-256 device id", () => {
@@ -87,6 +87,17 @@ describe("public contracts", () => {
     expect(isExactDevelopmentFixture(DEVELOPMENT_FIXTURE_DEVICE_ID, DEVELOPMENT_FIXTURE_COMPATIBILITY)).toBe(true);
     expect(isExactDevelopmentFixture("0".repeat(64), DEVELOPMENT_FIXTURE_COMPATIBILITY)).toBe(false);
     expect(isExactDevelopmentFixture(DEVELOPMENT_FIXTURE_DEVICE_ID, { ...DEVELOPMENT_FIXTURE_COMPATIBILITY, batteryPercent: 84 })).toBe(false);
+  });
+
+  it("allows only a verified unlocked Lineage PSG1 into the development diagnostics lane", () => {
+    const modified = {
+      ...DEVELOPMENT_FIXTURE_COMPATIBILITY,
+      installationState: "already_modified" as const,
+      bootloaderUnlocked: true,
+      lineageVersion: "22.2-UNOFFICIAL"
+    };
+    expect(isSafeDevelopmentModifiedScan(modified)).toBe(true);
+    expect(isSafeDevelopmentModifiedScan({ ...modified, immutableSerialVerified: false as never })).toBe(false);
   });
 
   it("purpose-binds web installer authorization to the paid order and active license", () => {
