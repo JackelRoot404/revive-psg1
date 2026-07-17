@@ -11,6 +11,7 @@
     "dev:desktop": "npm run tauri:dev -w @revive-psg1/desktop",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "test:node": "npm run test -w @revive-psg1/api && npm run test -w @revive-psg1/web && npm run test -w @revive-psg1/contracts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "release:manifest": "node tools/build-release-manifest.mjs",

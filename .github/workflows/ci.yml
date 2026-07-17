@@ -18,7 +18,7 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
+      - run: npm run test:node
       - run: npm run build
   desktop-native:
     strategy:
