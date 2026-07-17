@@ -24,6 +24,7 @@ export const DEVELOPMENT_FIXTURE_COMPATIBILITY: WebCompatibilitySnapshot = Objec
   charging: true,
   serialVerified: true,
   immutableSerialVerified: true,
+  fastbootUsbDescriptorVerified: true,
   usbStable: true,
   recoveryCapable: true,
   hostBytesAvailable: 64_000_000_000,

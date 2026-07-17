@@ -308,7 +308,7 @@ export function Wizard({ earlyAccessFree, developmentHardwareFixture }: { earlyA
     {stage === "fastboot" && <Progress title="Select the PSG1 Fastboot device in the browser prompt…" />}
     {stage === "session" && <Progress title="Cross-checking device identity and signed compatibility profiles…" />}
 
-    {scan && <><div className="scan-summary"><span>{scan.installationState === "development_fixture" ? "Simulated PSG1" : "PSG1 detected"}</span><span>{scan.model || scan.product}</span><span>Battery {scan.batteryPercent}%</span><span>Serial cross-check ✓</span><span>{stateLabel(scan.installationState)}</span></div>{scan.installationState === "already_modified" && <div className="test-mode"><strong>Already-unlocked test lane</strong><p>This PSG1 is running a modified system image. Revive can test detection, device binding, entitlement, and diagnostics, but the API will reject destructive installation-start operations.</p></div>}{scan.installationState === "development_fixture" && <div className="test-mode"><strong>Simulation—not a hardware result</strong><p>This deterministic fixture exercises the web and API state machine only. It does not count as a real compatibility or flashing test.</p></div>}</>}
+    {scan && <><div className="scan-summary"><span>{scan.installationState === "development_fixture" ? "Simulated PSG1" : "PSG1 detected"}</span><span>{scan.model || scan.product}</span><span>Battery {scan.batteryPercent}%</span><span>CPU ↔ Fastboot identity ✓</span><span>{stateLabel(scan.installationState)}</span></div>{!scan.fastbootUsbDescriptorVerified && <div className="descriptor-advisory"><strong>Browser descriptor advisory</strong><p>The browser returned a cached mode-specific USB serial. The authoritative Rockchip CPU and Fastboot protocol identities matched; this advisory is retained in the compatibility record.</p></div>}{scan.installationState === "already_modified" && <div className="test-mode"><strong>Already-unlocked test lane</strong><p>This PSG1 is running a modified system image. Revive can test detection, device binding, entitlement, and diagnostics, but the API will reject destructive installation-start operations.</p></div>}{scan.installationState === "development_fixture" && <div className="test-mode"><strong>Simulation—not a hardware result</strong><p>This deterministic fixture exercises the web and API state machine only. It does not count as a real compatibility or flashing test.</p></div>}</>}
 
     {stage === "unsupported" && <div className="blocked"><strong>This firmware is not supported yet</strong><p>The PSG1 was returned to Android. It was not charged, bound, unlocked, wiped, or flashed.</p></div>}
 
@@ -351,6 +351,7 @@ async function createWebSession(scan: WebCompatibilityScan, developmentFixture =
       batteryPercent: scan.batteryPercent, charging: scan.charging,
       serialVerified: scan.serialVerified, usbStable: scan.usbStable,
       immutableSerialVerified: scan.immutableSerialVerified,
+      fastbootUsbDescriptorVerified: scan.fastbootUsbDescriptorVerified,
       recoveryCapable: scan.recoveryCapable, hostBytesAvailable: scan.hostBytesAvailable,
       systemPartitionBytes: scan.systemPartitionBytes
     }

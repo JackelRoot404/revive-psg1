@@ -44,6 +44,9 @@ footer > span { max-width: 520px; }
 .fixture-card strong, .test-mode strong { color: #c7b8ff; }
 .fixture-card p, .test-mode p { margin-bottom: 0; color: var(--muted); line-height: 1.55; }
 .fixture-card .button { margin-bottom: 0; }
+.descriptor-advisory { margin-top: 16px; padding: 18px; border: 1px solid #d8b75b; background: #d8b75b0b; }
+.descriptor-advisory strong { color: #f1cf72; }
+.descriptor-advisory p { margin-bottom: 0; color: var(--muted); line-height: 1.55; }
 
 .donation-banner { position: relative; width: 100%; overflow: hidden; border-block: 1px solid #d8ff7a; background: linear-gradient(112deg, #b9ff24 0%, #8dff62 48%, #bfa8ff 100%); color: #090d08; box-shadow: 0 22px 80px #a8ff3030; }
 .donation-banner::before { content: ""; position: absolute; inset: -60% 42% -90% -12%; background: radial-gradient(circle, #fff9, transparent 62%); pointer-events: none; }

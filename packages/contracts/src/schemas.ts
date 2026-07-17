@@ -38,6 +38,7 @@ export const webCompatibilitySnapshotSchema = compatibilitySnapshotSchema.extend
   installationState: installationStateSchema,
   serialVerified: z.literal(true),
   immutableSerialVerified: z.literal(true),
+  fastbootUsbDescriptorVerified: z.boolean(),
   usbStable: z.literal(true),
   recoveryCapable: z.literal(true),
   hostBytesAvailable: z.number().int().nonnegative(),

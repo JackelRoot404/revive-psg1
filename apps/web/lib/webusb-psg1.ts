@@ -28,6 +28,7 @@ export type WebCompatibilityScan = {
   charging: boolean;
   serialVerified: boolean;
   immutableSerialVerified: boolean;
+  fastbootUsbDescriptorVerified: boolean;
   usbStable: boolean;
   recoveryCapable: boolean;
   hostBytesAvailable: number;
@@ -35,7 +36,7 @@ export type WebCompatibilityScan = {
 };
 
 export type AdbCompatibilityScan = Omit<WebCompatibilityScan,
-  "deviceId" | "systemPartitionBytes" | "serialVerified" | "immutableSerialVerified"
+  "deviceId" | "systemPartitionBytes" | "serialVerified" | "immutableSerialVerified" | "fastbootUsbDescriptorVerified"
 > & { bootloaderSerialCandidate: string };
 
 export class WebAdbPsg1 {
@@ -238,9 +239,7 @@ export async function finalizeWebScan(
   if (!fastbootSerial || fastbootSerial !== bootloaderSerialCandidate) {
     throw new Error(`The Rockchip CPU and Fastboot protocol serials do not match (CPU length ${bootloaderSerialCandidate.length}; Fastboot length ${fastbootSerial.length}). No access was activated and no device modification was attempted.`);
   }
-  if (usbSerial && usbSerial !== fastbootSerial) {
-    throw new Error(`The Fastboot USB descriptor does not match the verified Fastboot protocol serial (protocol length ${fastbootSerial.length}; USB length ${usbSerial.length}). No access was activated and no device modification was attempted.`);
-  }
+  const fastbootUsbDescriptorVerified = Boolean(usbSerial) && usbSerial === fastbootSerial;
   const systemValue = await fastboot.getVariable("partition-size:system").catch(() => fastboot.getVariable("partition-size:system_a"));
   const systemPartitionBytes = parseFastbootSize(systemValue);
   if (!systemPartitionBytes) throw new Error("Fastboot did not report a valid system partition size.");
@@ -257,7 +256,8 @@ export async function finalizeWebScan(
     deviceId: await deviceIdForSerial(fastbootSerial),
     systemPartitionBytes,
     serialVerified: true,
-    immutableSerialVerified: true
+    immutableSerialVerified: true,
+    fastbootUsbDescriptorVerified
   };
 }
 

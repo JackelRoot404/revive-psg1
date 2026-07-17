@@ -71,6 +71,7 @@ describe("public contracts", () => {
         buildFingerprint: "test", buildIncremental: "test", androidApiLevel: 35,
         vendorApiLevel: 35, batteryPercent: 100, charging: true, serialVerified: true,
         immutableSerialVerified: true,
+        fastbootUsbDescriptorVerified: true,
         systemBuildFingerprint: "test", vendorBuildFingerprint: "test",
         systemBuildIncremental: "test", systemBuildType: "user", lineageVersion: "",
         bootloaderUnlocked: false, installationState: "stock_locked",

@@ -52,6 +52,7 @@ describe("web destructive preflight", () => {
     installationState: "stock_locked",
     serialVerified: true,
     immutableSerialVerified: true,
+    fastbootUsbDescriptorVerified: true,
     usbStable: true,
     recoveryCapable: true,
     hostBytesAvailable: 8_000_000_000,
