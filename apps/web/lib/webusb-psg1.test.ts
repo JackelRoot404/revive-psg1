@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyInstallationState, deviceIdForSerial, isExpectedUsbDisconnect, normalizeSerial, parseFastbootResponse, parseFastbootSize, parseFastbootUnlocked } from "./webusb-psg1";
+import { classifyInstallationState, deviceIdForSerial, isExpectedUsbDisconnect, normalizeSerial, parseFastbootResponse, parseFastbootSize, parseFastbootUnlocked, parseFastbootVariable } from "./webusb-psg1";
 
 describe("PSG1 WebUSB transport primitives", () => {
   it("normalizes and hashes the same manufacturer serial deterministically", async () => {
@@ -17,6 +17,12 @@ describe("PSG1 WebUSB transport primitives", () => {
     expect(parseFastbootSize("0x1000")).toBe(4096);
     expect(parseFastbootSize("4096")).toBe(4096);
     expect(parseFastbootSize("not-a-size")).toBe(0);
+  });
+
+  it("removes getvar labels emitted through Fastboot INFO responses", () => {
+    expect(parseFastbootVariable("serialno", "serialno: 2129c17e0292269d")).toBe("2129c17e0292269d");
+    expect(parseFastbootVariable("partition-size:system", "(bootloader) partition-size:system: 0x1000")).toBe("0x1000");
+    expect(parseFastbootVariable("unlocked", "yes")).toBe("yes");
   });
 
   it("classifies Lineage from the actual system props even when vendor props remain stock", () => {

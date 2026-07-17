@@ -184,7 +184,7 @@ export class WebFastbootPsg1 {
   }
 
   async getVariable(name: string): Promise<string> {
-    return this.command(`getvar:${name}`);
+    return parseFastbootVariable(name, await this.command(`getvar:${name}`));
   }
 
   async reboot(): Promise<void> {
@@ -221,8 +221,11 @@ export async function finalizeWebScan(
 ): Promise<WebCompatibilityScan> {
   const fastbootSerial = normalizeSerial((await fastboot.getVariable("serialno")) || fastboot.normalizedUsbSerial);
   const usbSerial = fastboot.normalizedUsbSerial;
-  if (!fastbootSerial || fastbootSerial !== adbSerial || (usbSerial && usbSerial !== adbSerial)) {
-    throw new Error("ADB, Fastboot, and USB descriptor serials do not match. No access was activated and no device modification was attempted.");
+  if (!fastbootSerial || fastbootSerial !== adbSerial) {
+    throw new Error("The ADB and Fastboot protocol serials do not match. No access was activated and no device modification was attempted.");
+  }
+  if (usbSerial && usbSerial !== adbSerial) {
+    throw new Error("The Fastboot USB descriptor serial does not match the verified ADB serial. No access was activated and no device modification was attempted.");
   }
   const systemValue = await fastboot.getVariable("partition-size:system").catch(() => fastboot.getVariable("partition-size:system_a"));
   const systemPartitionBytes = parseFastbootSize(systemValue);
@@ -284,6 +287,15 @@ export function parseFastbootSize(value: string): number {
   const trimmed = value.trim();
   const parsed = /^0x[0-9a-f]+$/iu.test(trimmed) ? Number.parseInt(trimmed.slice(2), 16) : Number.parseInt(trimmed, 10);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 0;
+}
+
+export function parseFastbootVariable(name: string, value: string): string {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return value
+    .trim()
+    .replace(/^\(bootloader\)\s*/iu, "")
+    .replace(new RegExp(`^${escapedName}\\s*:\\s*`, "iu"), "")
+    .trim();
 }
 
 function findFastbootInterface(configuration: USBConfiguration | null): { interfaceNumber: number; inEndpoint: number; outEndpoint: number } | null {
