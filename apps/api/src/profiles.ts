@@ -18,16 +18,34 @@ export function verifySignedDocument(document: unknown, signature: string, publi
 }
 
 export function profileMatches(profile: CompatibilityProfile, snapshot: CompatibilitySnapshot): boolean {
+  return hardwareMatches(profile, snapshot)
+    && firmwareMatches(profile, snapshot.buildFingerprint, snapshot.buildIncremental);
+}
+
+function hardwareMatches(profile: CompatibilityProfile, snapshot: CompatibilitySnapshot): boolean {
   return profile.product === snapshot.product
     && matches(snapshot.model, profile.modelPatterns)
     && matches(snapshot.board, profile.boardPatterns)
     && matches(snapshot.hardware, profile.hardwarePatterns)
     && profile.androidApiLevels.includes(snapshot.androidApiLevel)
-    && profile.vendorApiLevels.includes(snapshot.vendorApiLevel)
-    && profile.firmwarePatterns.some((pattern) => {
-      const expression = new RegExp(pattern, "i");
-      return expression.test(snapshot.buildFingerprint) || expression.test(snapshot.buildIncremental);
-    });
+    && profile.vendorApiLevels.includes(snapshot.vendorApiLevel);
+}
+
+function firmwareMatches(profile: CompatibilityProfile, fingerprint: string, incremental: string): boolean {
+  return profile.firmwarePatterns.some((pattern) => {
+    const expression = new RegExp(pattern, "i");
+    return expression.test(fingerprint) || expression.test(incremental);
+  });
+}
+
+export function webProfileMatches(profile: CompatibilityProfile, snapshot: WebCompatibilitySnapshot): boolean {
+  if (!hardwareMatches(profile, snapshot) || snapshot.installationState === "development_fixture") return false;
+  if (snapshot.installationState === "already_modified") {
+    return snapshot.bootloaderUnlocked
+      && Boolean(snapshot.lineageVersion.trim())
+      && firmwareMatches(profile, snapshot.vendorBuildFingerprint, snapshot.buildIncremental);
+  }
+  return firmwareMatches(profile, snapshot.systemBuildFingerprint, snapshot.systemBuildIncremental);
 }
 
 export function webPreflightMatches(profile: CompatibilityProfile, snapshot: WebCompatibilitySnapshot): boolean {

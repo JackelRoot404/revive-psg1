@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { BETA_PROMO_CODE, LICENSE_PRICE_USDC, TREASURY_WALLET, USDC_AMOUNT_BASE_UNITS, browserProofMessage, compatibilityProfileSchema, deviceIdSchema, earlyAccessActivateSchema, entitlementRecoverySchema, firmwareArtifactSchema, orderCreateSchema, releaseManifestSchema, sessionCreateSchema, sessionProofMessage, webCheckoutWalletChallengeMessage, webInstallerWalletChallengeMessage, webSessionCreateSchema, webSessionProofMessage } from "./index";
+import { BETA_PROMO_CODE, DEVELOPMENT_FIXTURE_COMPATIBILITY, DEVELOPMENT_FIXTURE_DEVICE_ID, LICENSE_PRICE_USDC, TREASURY_WALLET, USDC_AMOUNT_BASE_UNITS, browserProofMessage, compatibilityProfileSchema, deviceIdSchema, earlyAccessActivateSchema, entitlementRecoverySchema, firmwareArtifactSchema, isExactDevelopmentFixture, orderCreateSchema, releaseManifestSchema, sessionCreateSchema, sessionProofMessage, webCheckoutWalletChallengeMessage, webInstallerWalletChallengeMessage, webSessionCreateSchema, webSessionProofMessage } from "./index";
 
 describe("public contracts", () => {
   it("accepts a SHA-256 device id", () => {
@@ -70,6 +70,9 @@ describe("public contracts", () => {
         product: "PSG1", model: "PSG1", board: "V11", hardware: "RK3588S",
         buildFingerprint: "test", buildIncremental: "test", androidApiLevel: 35,
         vendorApiLevel: 35, batteryPercent: 100, charging: true, serialVerified: true,
+        systemBuildFingerprint: "test", vendorBuildFingerprint: "test",
+        systemBuildIncremental: "test", systemBuildType: "user", lineageVersion: "",
+        bootloaderUnlocked: false, installationState: "stock_locked",
         usbStable: true, recoveryCapable: true, hostBytesAvailable: 8_000_000_000,
         systemPartitionBytes: 4_000_000_000
       }
@@ -77,6 +80,12 @@ describe("public contracts", () => {
     expect(webSessionCreateSchema.parse(input).hostOs).toBe("web");
     expect(sessionCreateSchema.safeParse(input).success).toBe(false);
     expect(webSessionProofMessage(input)).toContain("Revive PSG1 web pairing");
+  });
+
+  it("recognizes only the exact deterministic development fixture", () => {
+    expect(isExactDevelopmentFixture(DEVELOPMENT_FIXTURE_DEVICE_ID, DEVELOPMENT_FIXTURE_COMPATIBILITY)).toBe(true);
+    expect(isExactDevelopmentFixture("0".repeat(64), DEVELOPMENT_FIXTURE_COMPATIBILITY)).toBe(false);
+    expect(isExactDevelopmentFixture(DEVELOPMENT_FIXTURE_DEVICE_ID, { ...DEVELOPMENT_FIXTURE_COMPATIBILITY, batteryPercent: 84 })).toBe(false);
   });
 
   it("purpose-binds web installer authorization to the paid order and active license", () => {

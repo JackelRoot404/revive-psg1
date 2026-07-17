@@ -1,5 +1,5 @@
 import { Wizard } from "./wizard";
-import { isEarlyAccessFree } from "../../lib/server-config";
+import { isDevelopmentHardwareFixtureEnabled, isEarlyAccessFree } from "../../lib/server-config";
 
 export const metadata = {
   title: "Web wizard",
@@ -7,5 +7,8 @@ export const metadata = {
 };
 
 export default function WizardPage() {
-  return <main className="wizard-shell"><Wizard earlyAccessFree={isEarlyAccessFree()} /></main>;
+  return <main className="wizard-shell"><Wizard
+    earlyAccessFree={isEarlyAccessFree()}
+    developmentHardwareFixture={isDevelopmentHardwareFixtureEnabled()}
+  /></main>;
 }

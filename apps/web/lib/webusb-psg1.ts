@@ -5,6 +5,7 @@ import { AdbDaemonWebUsbDeviceManager } from "@yume-chan/adb-daemon-webusb";
 export const ROCKCHIP_VENDOR_ID = 0x2207;
 export const FASTBOOT_INTERFACE = Object.freeze({ classCode: 0xff, subclassCode: 0x42, protocolCode: 0x03 });
 const DEVICE_ID_DOMAIN = "revive-psg1:v1";
+export type InstallationState = "stock_locked" | "stock_unlocked" | "already_modified" | "development_fixture";
 
 export type WebCompatibilityScan = {
   deviceId: string;
@@ -14,6 +15,13 @@ export type WebCompatibilityScan = {
   hardware: string;
   buildFingerprint: string;
   buildIncremental: string;
+  systemBuildFingerprint: string;
+  vendorBuildFingerprint: string;
+  systemBuildIncremental: string;
+  systemBuildType: string;
+  lineageVersion: string;
+  bootloaderUnlocked: boolean;
+  installationState: InstallationState;
   androidApiLevel: number;
   vendorApiLevel: number;
   batteryPercent: number;
@@ -63,13 +71,20 @@ export class WebAdbPsg1 {
   }
 
   async readCompatibility(): Promise<Omit<WebCompatibilityScan, "deviceId" | "systemPartitionBytes" | "serialVerified">> {
-    const [product, model, board, hardware, buildFingerprint, buildIncremental, androidApi, vendorApi, battery, recovery, storage] = await Promise.all([
+    const [product, model, board, hardware, buildFingerprint, buildIncremental, systemBuildFingerprint, vendorBuildFingerprint, systemBuildIncremental, systemBuildType, lineageVersion, flashLocked, verifiedBootState, androidApi, vendorApi, battery, recovery, storage] = await Promise.all([
       firstProp(this.adb, ["ro.product.vendor.device", "ro.product.odm.device", "ro.product.device"]),
       firstProp(this.adb, ["ro.product.vendor.model", "ro.product.odm.model", "ro.product.model"]),
       boardIdentity(this.adb),
       firstProp(this.adb, ["ro.soc.model", "ro.hardware", "ro.boot.hardware"]),
       this.adb.getProp("ro.build.fingerprint"),
       this.adb.getProp("ro.build.version.incremental"),
+      this.adb.getProp("ro.system.build.fingerprint"),
+      this.adb.getProp("ro.vendor.build.fingerprint"),
+      this.adb.getProp("ro.system.build.version.incremental"),
+      this.adb.getProp("ro.system.build.type"),
+      this.adb.getProp("ro.lineage.version"),
+      this.adb.getProp("ro.boot.flash.locked"),
+      this.adb.getProp("ro.boot.verifiedbootstate"),
       this.adb.getProp("ro.build.version.sdk"),
       this.adb.getProp("ro.vendor.build.version.sdk"),
       this.adb.subprocess.noneProtocol.spawnWaitText(["dumpsys", "battery"]),
@@ -79,9 +94,20 @@ export class WebAdbPsg1 {
     const batteryPercent = Math.min(100, parseBatteryNumber(battery, "level"));
     const status = parseBatteryNumber(battery, "status");
     const serialAgain = normalizeSerial(this.adb.serial);
+    const bootloaderUnlocked = flashLocked.trim() === "0" || verifiedBootState.trim().toLowerCase() === "orange";
+    const identity = {
+      systemBuildFingerprint: systemBuildFingerprint.trim() || buildFingerprint.trim(),
+      vendorBuildFingerprint: vendorBuildFingerprint.trim() || buildFingerprint.trim(),
+      systemBuildIncremental: systemBuildIncremental.trim() || buildIncremental.trim(),
+      systemBuildType: systemBuildType.trim() || "unknown",
+      lineageVersion: lineageVersion.trim(),
+      bootloaderUnlocked
+    };
     return {
       product: product.trim(), model: model.trim(), board: board.trim(), hardware: hardware.trim(),
       buildFingerprint: buildFingerprint.trim(), buildIncremental: buildIncremental.trim(),
+      ...identity,
+      installationState: classifyInstallationState(identity),
       androidApiLevel: parseInteger(androidApi), vendorApiLevel: parseInteger(vendorApi),
       batteryPercent, charging: status === 2 || status === 5,
       usbStable: serialAgain === this.normalizedSerial,
@@ -193,12 +219,36 @@ export async function finalizeWebScan(
   const systemValue = await fastboot.getVariable("partition-size:system").catch(() => fastboot.getVariable("partition-size:system_a"));
   const systemPartitionBytes = parseFastbootSize(systemValue);
   if (!systemPartitionBytes) throw new Error("Fastboot did not report a valid system partition size.");
+  const fastbootUnlocked = parseFastbootUnlocked(await fastboot.getVariable("unlocked").catch(() => ""));
+  if (fastbootUnlocked !== null && fastbootUnlocked !== adbScan.bootloaderUnlocked) {
+    throw new Error("Android and Fastboot reported different bootloader states. The scan stopped without modifying the device.");
+  }
+  const bootloaderUnlocked = fastbootUnlocked ?? adbScan.bootloaderUnlocked;
   return {
     ...adbScan,
+    bootloaderUnlocked,
+    installationState: classifyInstallationState({ ...adbScan, bootloaderUnlocked }),
     deviceId: await deviceIdForSerial(fastbootSerial),
     systemPartitionBytes,
     serialVerified: true
   };
+}
+
+export function classifyInstallationState(identity: Pick<WebCompatibilityScan,
+  "systemBuildFingerprint" | "vendorBuildFingerprint" | "systemBuildIncremental" | "systemBuildType" | "lineageVersion" | "bootloaderUnlocked"
+>): Exclude<InstallationState, "development_fixture"> {
+  const systemIdentity = `${identity.systemBuildFingerprint}\n${identity.systemBuildIncremental}\n${identity.lineageVersion}`.toLowerCase();
+  const modifiedSystem = Boolean(identity.lineageVersion.trim())
+    || /(?:^|[\/_-])(lineage|aosp|generic|gsi)(?:[\/_:-]|$)/iu.test(systemIdentity);
+  if (modifiedSystem) return "already_modified";
+  return identity.bootloaderUnlocked ? "stock_unlocked" : "stock_locked";
+}
+
+export function parseFastbootUnlocked(value: string): boolean | null {
+  const normalized = value.trim().toLowerCase();
+  if (["yes", "true", "1", "unlocked"].includes(normalized)) return true;
+  if (["no", "false", "0", "locked"].includes(normalized)) return false;
+  return null;
 }
 
 export function normalizeSerial(value: string): string {

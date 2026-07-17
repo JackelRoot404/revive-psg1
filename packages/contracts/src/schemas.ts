@@ -21,7 +21,21 @@ export const compatibilitySnapshotSchema = z.object({
   charging: z.boolean()
 });
 
+export const installationStateSchema = z.enum([
+  "stock_locked",
+  "stock_unlocked",
+  "already_modified",
+  "development_fixture"
+]);
+
 export const webCompatibilitySnapshotSchema = compatibilitySnapshotSchema.extend({
+  systemBuildFingerprint: z.string().min(1).max(320),
+  vendorBuildFingerprint: z.string().min(1).max(320),
+  systemBuildIncremental: z.string().min(1).max(120),
+  systemBuildType: z.string().min(1).max(40),
+  lineageVersion: z.string().max(160),
+  bootloaderUnlocked: z.boolean(),
+  installationState: installationStateSchema,
   serialVerified: z.literal(true),
   usbStable: z.literal(true),
   recoveryCapable: z.literal(true),
@@ -48,6 +62,7 @@ export const webSessionCreateSchema = z.object({
   requestNonce: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/),
   createdAt: z.string().datetime(),
   hostOs: z.literal("web"),
+  developmentFixture: z.literal(true).optional(),
   compatibility: webCompatibilitySnapshotSchema
 });
 

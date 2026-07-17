@@ -22,6 +22,8 @@ Safari, Firefox, Android, and iOS are unsupported because they do not provide th
 7. The API issues a ten-minute `web-installer` token. The token can fetch the signed release and mark the destructive boundary; it cannot claim, recover, or refund a license.
 8. Every release profile, manifest, and artifact must pass signature and hash verification before any destructive command.
 
+During free Early Access, steps 5 and 6 are replaced by a zero-value device-bound activation. The wallet/payment implementation remains disabled behind `EARLY_ACCESS_FREE=true` rather than being removed.
+
 The free scan intentionally precedes payment: compatibility and the stable device identifier must be known before a customer can be charged.
 
 ## Current safety gate
@@ -35,6 +37,13 @@ The checked-in browser alpha implements the read-only ADB/Fastboot scan and paye
 - USB VID/PID, interface class/subclass/protocol, endpoint directions, serial visibility, and Windows driver binding for every mode
 
 The destructive implementation must additionally support `max-download-size`, Android sparse images, resumable downloads, local SHA-256 verification, interruption-safe journaling, explicit wipe confirmation, and tested recovery paths.
+
+### Safe testing lanes
+
+- `already_modified`: the actual system fingerprint and Lineage marker show that the PSG1 is already running a modified OS. Detection, device binding, entitlement, and diagnostics may be tested, but the API rejects `installation-started` for that session.
+- `development_fixture`: enabled only when both local services run in development with `REVIVE_DEV_HARDWARE_FIXTURE=true`. The exact deterministic fixture simulates a stock, locked PSG1 and completes the web/API state machine with no USB access, no artifacts, and no destructive permission. Production startup fails if this flag is enabled.
+
+Neither lane counts as validation of stock bootloader unlock, flashing, failure recovery, or echOS restoration. Those gates still require a real stock unit or a verified customer-assisted beta session.
 
 ## Browser supply-chain controls
 

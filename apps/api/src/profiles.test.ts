@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CompatibilityProfile, CompatibilitySnapshot, WebCompatibilitySnapshot } from "@revive-psg1/contracts";
-import { profileMatches, webPreflightMatches } from "./profiles";
+import { profileMatches, webPreflightMatches, webProfileMatches } from "./profiles";
 
 const profile: CompatibilityProfile = {
   id: "psg1-rk3588s-v11-api35-v1",
@@ -43,6 +43,13 @@ describe("fail-closed compatibility matching", () => {
 describe("web destructive preflight", () => {
   const webSnapshot: WebCompatibilitySnapshot = {
     ...snapshot,
+    systemBuildFingerprint: snapshot.buildFingerprint,
+    vendorBuildFingerprint: snapshot.buildFingerprint,
+    systemBuildIncremental: snapshot.buildIncremental,
+    systemBuildType: "user",
+    lineageVersion: "",
+    bootloaderUnlocked: false,
+    installationState: "stock_locked",
     serialVerified: true,
     usbStable: true,
     recoveryCapable: true,
@@ -54,4 +61,23 @@ describe("web destructive preflight", () => {
   it("rejects a partition outside the signed profile", () => expect(webPreflightMatches(profile, { ...webSnapshot, systemPartitionBytes: 5_000_000_000 })).toBe(false));
   it("rejects low battery unless the device is charging", () => expect(webPreflightMatches(profile, { ...webSnapshot, batteryPercent: 20, charging: false })).toBe(false));
   it("rejects inadequate browser storage", () => expect(webPreflightMatches(profile, { ...webSnapshot, hostBytesAvailable: 1_000_000_000 })).toBe(false));
+
+  it("matches stock firmware from the actual system identity", () => expect(webProfileMatches(profile, webSnapshot)).toBe(true));
+  it("does not mistake a Lineage system for stock when merged props retain PlaySolana", () => expect(webProfileMatches(profile, {
+    ...webSnapshot,
+    systemBuildFingerprint: "generic/lineage_gsi_arm64_gN/lineage_gsi_arm64:15/build:userdebug/release-keys",
+    systemBuildIncremental: "1750492249",
+    lineageVersion: "22.2-UNOFFICIAL",
+    bootloaderUnlocked: true,
+    installationState: "stock_unlocked"
+  })).toBe(false));
+  it("accepts the same device only in the explicit already-modified lane", () => expect(webProfileMatches(profile, {
+    ...webSnapshot,
+    systemBuildFingerprint: "generic/lineage_gsi_arm64_gN/lineage_gsi_arm64:15/build:userdebug/release-keys",
+    vendorBuildFingerprint: "PlaySolana/PSG1/PSG1:15/build/playsolana-20260521-145647:user/release-keys",
+    systemBuildIncremental: "1750492249",
+    lineageVersion: "22.2-UNOFFICIAL",
+    bootloaderUnlocked: true,
+    installationState: "already_modified"
+  })).toBe(true));
 });

@@ -51,6 +51,17 @@ npm run dev:web
 
 The API intentionally reports devices as unsupported unless `RELEASE_PUBLIC_KEY_PEM` is configured and the database contains a matching active profile whose canonical JSON signature verifies.
 
+### Test without a stock PSG1
+
+The wizard has a deterministic, non-destructive stock-device fixture for local development. Start both services with the flag enabled:
+
+```bash
+REVIVE_DEV_HARDWARE_FIXTURE=true npm run dev:api
+REVIVE_DEV_HARDWARE_FIXTURE=true npm run dev:web
+```
+
+Open `http://localhost:3000/wizard` and choose **Simulate stock PSG1**. The fixture exercises session creation, free entitlement, and release authorization without USB hardware. It uses a fixed fake device ID, returns no artifacts, rejects the destructive installation boundary, and is refused by production configuration. It is a software-flow test only; it cannot replace a real stock-hardware flashing and recovery test.
+
 ## Verification
 
 ```bash

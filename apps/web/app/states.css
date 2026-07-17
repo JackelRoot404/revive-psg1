@@ -40,6 +40,10 @@ footer > span { max-width: 520px; }
 .early-access-card { margin: 22px 0 8px; padding: 22px; border: 1px solid var(--acid); background: linear-gradient(135deg, #bcff2b12, #916cff14); }
 .early-access-card strong { color: var(--acid); font-size: 20px; }
 .early-access-card p { margin-bottom: 0; color: var(--muted); line-height: 1.6; }
+.fixture-card, .test-mode { margin-top: 22px; padding: 20px; border: 1px dashed var(--violet); background: #916cff0d; }
+.fixture-card strong, .test-mode strong { color: #c7b8ff; }
+.fixture-card p, .test-mode p { margin-bottom: 0; color: var(--muted); line-height: 1.55; }
+.fixture-card .button { margin-bottom: 0; }
 
 .donation-banner { position: relative; width: 100%; overflow: hidden; border-block: 1px solid #d8ff7a; background: linear-gradient(112deg, #b9ff24 0%, #8dff62 48%, #bfa8ff 100%); color: #090d08; box-shadow: 0 22px 80px #a8ff3030; }
 .donation-banner::before { content: ""; position: absolute; inset: -60% 42% -90% -12%; background: radial-gradient(circle, #fff9, transparent 62%); pointer-events: none; }

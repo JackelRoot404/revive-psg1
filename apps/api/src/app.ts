@@ -8,6 +8,8 @@ import Redis from "ioredis";
 import {
   BETA_PROMO_CODE,
   BETA_PROMO_LIMIT,
+  DEVELOPMENT_FIXTURE_DEVICE_ID,
+  DEVELOPMENT_FIXTURE_PROFILE_ID,
   LICENSE_PRICE_USDC,
   SESSION_TTL_SECONDS,
   SOLANA_USDC_MINT,
@@ -23,6 +25,7 @@ import {
   deviceIdSchema,
   earlyAccessActivateSchema,
   entitlementRecoverySchema,
+  isExactDevelopmentFixture,
   licenseClaimMessage,
   licenseClaimSchema,
   orderCreateSchema,
@@ -62,7 +65,7 @@ import {
   walletChallenges
 } from "./db/schema";
 import { audit } from "./audit";
-import { profileMatches, verifySignedDocument, webPreflightMatches } from "./profiles";
+import { profileMatches, verifySignedDocument, webPreflightMatches, webProfileMatches } from "./profiles";
 import { SolanaPaymentVerifier } from "./payment";
 import { bearerToken, randomNonce, randomSolanaAddress, safeEqualHex, sha256, TokenService, verifyEd25519Base58 } from "./security";
 import { ArtifactStorage } from "./storage";
@@ -172,6 +175,13 @@ export async function buildApp(dependencies: Dependencies) {
 
   app.post("/v1/web/sessions", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const input = webSessionCreateSchema.parse(request.body);
+    const developmentFixture = Boolean(input.developmentFixture)
+      && config.developmentHardwareFixture
+      && config.nodeEnv === "development"
+      && isExactDevelopmentFixture(input.deviceId, input.compatibility);
+    if (input.developmentFixture && !developmentFixture) {
+      return reply.code(403).send({ code: "DEVELOPMENT_FIXTURE_FORBIDDEN" });
+    }
     if (Math.abs(Date.now() - Date.parse(input.createdAt)) > 5 * 60_000) {
       return reply.code(400).send({ code: "SESSION_PROOF_EXPIRED" });
     }
@@ -179,14 +189,16 @@ export async function buildApp(dependencies: Dependencies) {
     if (!verifyEd25519Base58({ publicKey: input.pairingPublicKey, signature: input.pairingProof, message: proofMessage })) {
       return reply.code(401).send({ code: "INVALID_PAIRING_PROOF", message: "Web pairing proof is invalid" });
     }
-    const activeProfiles = await db.select().from(compatibilityProfiles).where(eq(compatibilityProfiles.active, true));
+    const activeProfiles = developmentFixture ? [] : await db.select().from(compatibilityProfiles).where(eq(compatibilityProfiles.active, true));
     const matched = activeProfiles.find((row) => {
       const parsed = compatibilityProfileSchema.safeParse({ ...(row.signedDocument as object), signature: row.signature });
       return parsed.success
         && verifySignedDocument(row.signedDocument, row.signature, config.releasePublicKeyPem)
-        && profileMatches(parsed.data, input.compatibility)
+        && webProfileMatches(parsed.data, input.compatibility)
         && webPreflightMatches(parsed.data, input.compatibility);
     });
+    const profileId = developmentFixture ? DEVELOPMENT_FIXTURE_PROFILE_ID : matched?.id;
+    const supported = developmentFixture || Boolean(matched);
     const id = randomUUID();
     const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
     try {
@@ -199,8 +211,8 @@ export async function buildApp(dependencies: Dependencies) {
         hostOs: "web",
         channel: "web",
         compatibility: input.compatibility,
-        profileId: matched?.id,
-        supported: Boolean(matched),
+        profileId,
+        supported,
         expiresAt
       });
     } catch (error) {
@@ -213,11 +225,13 @@ export async function buildApp(dependencies: Dependencies) {
       sessionId: id,
       deviceId: input.deviceId
     });
-    await audit(db, "session.created", { actor: input.deviceId, subjectId: id, payload: { channel: "web", supported: Boolean(matched), profileId: matched?.id } });
+    await audit(db, "session.created", { actor: input.deviceId, subjectId: id, payload: { channel: "web", supported, profileId, developmentFixture } });
     return reply.code(201).send({
       sessionId: id,
-      supported: Boolean(matched),
-      profileId: matched?.id ?? null,
+      supported,
+      installationState: input.compatibility.installationState,
+      destructiveAllowed: false,
+      profileId: profileId ?? null,
       profile: matched?.signedDocument ?? null,
       profileSignature: matched?.signature ?? null,
       browserToken,
@@ -803,6 +817,16 @@ export async function buildApp(dependencies: Dependencies) {
     if (auth.sub !== id) return reply.code(403).send({ code: "LICENSE_MISMATCH" });
     const [current] = await db.select().from(licenses).where(and(eq(licenses.id, id), eq(licenses.status, "active"))).limit(1);
     if (!current || auth.deviceId !== current.deviceId) return reply.code(404).send({ code: "LICENSE_NOT_FOUND" });
+    const currentSessionId = typeof auth.sessionId === "string" ? auth.sessionId : undefined;
+    const [origin] = currentSessionId
+      ? await db.select({ compatibility: sessions.compatibility }).from(sessions).where(eq(sessions.id, currentSessionId)).limit(1)
+      : await db.select({ compatibility: sessions.compatibility }).from(orders)
+        .innerJoin(sessions, eq(sessions.id, orders.sessionId))
+        .where(eq(orders.id, current.orderId)).limit(1);
+    const installationState = (origin?.compatibility as { installationState?: string } | undefined)?.installationState;
+    if (installationState === "already_modified" || installationState === "development_fixture") {
+      return reply.code(409).send({ code: "DESTRUCTIVE_TEST_MODE_BLOCKED" });
+    }
     if (current.modificationStartedAt) return { modificationStartedAt: current.modificationStartedAt.toISOString() };
     const result = await db.update(licenses).set({ modificationStartedAt: new Date() }).where(and(eq(licenses.id, id), eq(licenses.status, "active"), isNull(licenses.modificationStartedAt))).returning();
     if (!result.length) return reply.code(409).send({ code: "INSTALLATION_BOUNDARY_RACE" });
@@ -857,6 +881,16 @@ export async function buildApp(dependencies: Dependencies) {
     const auth = await verifyInstallerAccess(request, tokens);
     const license = await activeLicenseForDevice(db, String(auth.deviceId));
     if (!license || license.id !== auth.sub) return reply.code(403).send({ code: "LICENSE_INACTIVE" });
+    if (config.developmentHardwareFixture && config.nodeEnv === "development" && license.deviceId === DEVELOPMENT_FIXTURE_DEVICE_ID) {
+      return {
+        manifest: { version: "development-fixture", channel: "diagnostics-only", artifacts: [] },
+        signature: "development-only-no-release-signature",
+        profile: { id: DEVELOPMENT_FIXTURE_PROFILE_ID, mode: "simulated-stock-locked" },
+        profileSignature: "development-only-no-profile-signature",
+        downloadUrls: {},
+        destructiveAllowed: false
+      };
+    }
     const [device] = await db.select().from(devices).where(eq(devices.id, license.deviceId)).limit(1);
     if (!device?.profileId) return reply.code(409).send({ code: "DEVICE_PROFILE_MISSING" });
     const [profile] = await db.select().from(compatibilityProfiles).where(and(eq(compatibilityProfiles.id, device.profileId), eq(compatibilityProfiles.active, true))).limit(1);

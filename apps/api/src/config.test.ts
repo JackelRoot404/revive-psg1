@@ -46,4 +46,12 @@ describe("local configuration", () => {
   it("restores paid enforcement with one feature flag", () => {
     expect(loadConfig({ NODE_ENV: "development", EARLY_ACCESS_FREE: "false" }).earlyAccessFree).toBe(false);
   });
+
+  it("allows the deterministic hardware fixture only when explicitly enabled in development", () => {
+    expect(loadConfig({ NODE_ENV: "development", REVIVE_DEV_HARDWARE_FIXTURE: "true" }).developmentHardwareFixture).toBe(true);
+  });
+
+  it("refuses the deterministic hardware fixture in production", () => {
+    expect(() => loadConfig({ ...production, REVIVE_DEV_HARDWARE_FIXTURE: "true" })).toThrow(/forbidden in production/i);
+  });
 });

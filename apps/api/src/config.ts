@@ -25,6 +25,7 @@ const environmentSchema = z.object({
   SPACES_SECRET_KEY: z.string().optional(),
   CRASH_REPORTS_ENABLED: z.string().default("true").transform((value) => value === "true"),
   EARLY_ACCESS_FREE: z.string().default("true").transform((value) => value === "true"),
+  REVIVE_DEV_HARDWARE_FIXTURE: z.string().default("false").transform((value) => value === "true"),
   PUBLIC_SALES_ENABLED: z.string().default("false").transform((value) => value === "true")
 });
 
@@ -52,12 +53,14 @@ export type Config = {
   spacesSecretKey?: string;
   crashReportsEnabled: boolean;
   earlyAccessFree: boolean;
+  developmentHardwareFixture: boolean;
   publicSalesEnabled: boolean;
 };
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Config {
   const value = environmentSchema.parse(environment);
   if (value.NODE_ENV === "production") {
+    if (value.REVIVE_DEV_HARDWARE_FIXTURE) throw new Error("The development hardware fixture is forbidden in production");
     if (value.SESSION_TOKEN_SECRET === "revive-local-development-session-secret-only") {
       throw new Error("Production requires a unique session token secret");
     }
@@ -100,6 +103,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Config
     ...(value.SPACES_SECRET_KEY ? { spacesSecretKey: value.SPACES_SECRET_KEY } : {}),
     crashReportsEnabled: value.CRASH_REPORTS_ENABLED,
     earlyAccessFree: value.EARLY_ACCESS_FREE,
+    developmentHardwareFixture: value.REVIVE_DEV_HARDWARE_FIXTURE,
     publicSalesEnabled: value.PUBLIC_SALES_ENABLED
   };
 }
