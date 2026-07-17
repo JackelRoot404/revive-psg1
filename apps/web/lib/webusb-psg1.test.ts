@@ -62,6 +62,18 @@ describe("PSG1 WebUSB transport primitives", () => {
     expect(parseFastbootUnlocked("unknown")).toBeNull();
   });
 
+  it("keeps the generic Fastboot flashing lock distinct from PSG1 verified-boot state", () => {
+    expect(parseFastbootUnlocked("no")).toBe(false);
+    expect(classifyInstallationState({
+      systemBuildFingerprint: "generic/lineage_gsi_arm64_gN/lineage_gsi_arm64:15/build:userdebug/release-keys",
+      vendorBuildFingerprint: "PlaySolana/PSG1/PSG1:15/build/playsolana-20260521-145647:user/release-keys",
+      systemBuildIncremental: "1750492249",
+      systemBuildType: "userdebug",
+      lineageVersion: "22.2-UNOFFICIAL",
+      bootloaderUnlocked: true
+    })).toBe("already_modified");
+  });
+
   it("recognizes only expected USB teardown errors after an intentional reboot", () => {
     expect(isExpectedUsbDisconnect(new DOMException("The device was disconnected.", "NetworkError"))).toBe(true);
     expect(isExpectedUsbDisconnect(new Error("Fastboot rejected the command"))).toBe(false);

@@ -246,11 +246,11 @@ export async function finalizeWebScan(
   if (!adbScan.systemPartitionBytes) throw new Error("Android did not report a valid mounted system size.");
   const superPartitionBytes = parseFastbootSize(await fastboot.getVariable("partition-size:super"));
   if (!superPartitionBytes) throw new Error("Fastboot did not report a valid super partition size.");
-  const fastbootUnlocked = parseFastbootUnlocked(await fastboot.getVariable("unlocked").catch(() => ""));
-  if (fastbootUnlocked !== null && fastbootUnlocked !== adbScan.bootloaderUnlocked) {
-    throw new Error("Android and Fastboot reported different bootloader states. The scan stopped without modifying the device.");
-  }
-  const bootloaderUnlocked = fastbootUnlocked ?? adbScan.bootloaderUnlocked;
+  // `at-unlock-vboot` unlocks Android Verified Boot on the PSG1, while the
+  // generic Fastboot `unlocked` variable continues to report the separate
+  // bootloader flashing lock as `no`. The read-only ro.boot values originate
+  // from the boot chain and are authoritative for the operation we perform.
+  const bootloaderUnlocked = adbScan.bootloaderUnlocked;
   const { bootloaderSerialCandidate: _bootloaderSerialCandidate, ...verifiedAdbScan } = adbScan;
   return {
     ...verifiedAdbScan,
