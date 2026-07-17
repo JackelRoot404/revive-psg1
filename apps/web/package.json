@@ -1,0 +1,35 @@
+{
+  "name": "@revive-psg1/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@revive-psg1/contracts": "0.1.0",
+    "@solana-program/memo": "0.11.2",
+    "@solana-program/token": "0.13.0",
+    "@solana/kit": "6.10.0",
+    "@solana/wallet-standard-features": "1.4.0",
+    "@wallet-standard/app": "1.1.1",
+    "@wallet-standard/base": "1.1.1",
+    "@wallet-standard/features": "1.1.1",
+    "bs58": "^6.0.0",
+    "next": "16.2.10",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "16.2.10",
+    "vite": "8.1.5",
+    "vitest": "4.1.10"
+  }
+}

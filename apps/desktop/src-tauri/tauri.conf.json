@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Revive PSG1",
+  "version": "0.1.0",
+  "identifier": "com.revivepsg1.desktop",
+  "build": { "beforeDevCommand": "npm run dev", "devUrl": "http://localhost:1420", "beforeBuildCommand": "npm run build", "frontendDist": "../dist" },
+  "app": { "windows": [{ "title": "Revive PSG1", "width": 1080, "height": 720, "minWidth": 820, "minHeight": 600 }], "security": { "csp": "default-src 'self'; connect-src 'self' https://api.revivepsg.com http://localhost:8080; style-src 'self' 'unsafe-inline'; img-src 'self' data:" } },
+  "bundle": { "active": true, "targets": ["dmg", "nsis"], "category": "Utility", "shortDescription": "Revive a compatible PSG1 Android handheld" },
+  "plugins": { "deep-link": { "desktop": { "schemes": ["revivepsg1", "revive-psg1"] } } }
+}

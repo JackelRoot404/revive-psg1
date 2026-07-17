@@ -1,0 +1,36 @@
+import { describe, expect, it } from "vitest";
+import { loadConfig } from "./config";
+
+const production = {
+  NODE_ENV: "production",
+  PUBLIC_API_URL: "https://api.revivepsg.com",
+  PUBLIC_WEB_URL: "https://revivepsg.com",
+  ALLOWED_ORIGINS: "https://revivepsg.com",
+  DATABASE_URL: "postgres://example",
+  DATABASE_CA_PEM: "-----BEGIN CERTIFICATE-----\\nexample\\n-----END CERTIFICATE-----",
+  VALKEY_URL: "rediss://example",
+  SESSION_TOKEN_SECRET: "x".repeat(32),
+  LICENSE_PRIVATE_KEY_PEM: "private",
+  LICENSE_PUBLIC_KEY_PEM: "public",
+  RELEASE_PUBLIC_KEY_PEM: "release-public",
+  SOLANA_RPC_PRIMARY: "https://primary.example",
+  SOLANA_RPC_FALLBACK: "https://fallback.example",
+  SPACES_ACCESS_KEY: "access",
+  SPACES_SECRET_KEY: "secret"
+};
+
+describe("production configuration", () => {
+  it("accepts an App Platform CA PEM secret and expands escaped newlines", () => {
+    expect(loadConfig(production).databaseCaPem).toContain("\nexample\n");
+  });
+
+  it("fails closed without distributed replay state", () => {
+    const { VALKEY_URL: _, ...missing } = production;
+    expect(() => loadConfig(missing)).toThrow(/Valkey/);
+  });
+
+  it("requires a fallback finalized-payment RPC", () => {
+    const { SOLANA_RPC_FALLBACK: _, ...missing } = production;
+    expect(() => loadConfig(missing)).toThrow(/fallback Solana RPC/);
+  });
+});

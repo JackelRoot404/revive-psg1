@@ -1,0 +1,64 @@
+# Public-launch template. Keep apps/api/.do/app.yaml at one instance for beta.
+# Replace every REPLACE_* value and provision secrets in App Platform before use.
+name: revive-psg1-api
+region: nyc
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+services:
+  - name: api
+    dockerfile_path: apps/api/Dockerfile
+    github:
+      branch: main
+      deploy_on_push: false
+      repo: REPLACE_WITH_GITHUB_OWNER/REPLACE_WITH_REPOSITORY
+    http_port: 8080
+    health_check:
+      http_path: /healthz
+      initial_delay_seconds: 10
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    instance_size_slug: apps-s-1vcpu-1gb
+    autoscaling:
+      min_instance_count: 2
+      max_instance_count: 10
+      metrics:
+        requests_per_second:
+          per_instance: 25
+        request_duration:
+          p95_milliseconds: 500
+    alerts:
+      - rule: RESTART_COUNT
+        operator: GREATER_THAN
+        value: 3
+        window: FIVE_MINUTES
+      - rule: MEM_UTILIZATION
+        operator: GREATER_THAN
+        value: 85
+        window: FIVE_MINUTES
+    envs:
+      - { key: NODE_ENV, value: production }
+      - { key: PORT, value: "8080" }
+      # This switch is necessary but the API must also verify every database launch gate.
+      - { key: PUBLIC_SALES_ENABLED, value: "false" }
+      - { key: TREASURY_WALLET, value: EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y }
+      - { key: PUBLIC_WEB_URL, value: "https://revivepsg.com" }
+      - { key: PUBLIC_API_URL, value: "https://api.revivepsg.com" }
+      - { key: ALLOWED_ORIGINS, value: "https://revivepsg.com,https://www.revivepsg.com" }
+      - { key: LICENSE_KEY_ID, value: REPLACE_WITH_ONLINE_LICENSE_KEY_ID }
+      - { key: SPACES_REGION, value: nyc3 }
+      - { key: SPACES_BUCKET, value: REPLACE_WITH_PRIVATE_SPACES_BUCKET }
+      - { key: CRASH_REPORTS_ENABLED, value: "true" }
+      - { key: DATABASE_URL, scope: RUN_TIME, type: SECRET }
+      - { key: DATABASE_CA_PEM, scope: RUN_TIME, type: SECRET }
+      - { key: VALKEY_URL, scope: RUN_TIME, type: SECRET }
+      - { key: SESSION_TOKEN_SECRET, scope: RUN_TIME, type: SECRET }
+      - { key: LICENSE_PRIVATE_KEY_PEM, scope: RUN_TIME, type: SECRET }
+      - { key: LICENSE_PUBLIC_KEY_PEM, scope: RUN_TIME, type: SECRET }
+      - { key: RELEASE_PUBLIC_KEY_PEM, scope: RUN_TIME, type: SECRET }
+      - { key: SOLANA_RPC_PRIMARY, scope: RUN_TIME, type: SECRET }
+      - { key: SOLANA_RPC_FALLBACK, scope: RUN_TIME, type: SECRET }
+      - { key: SPACES_ACCESS_KEY, scope: RUN_TIME, type: SECRET }
+      - { key: SPACES_SECRET_KEY, scope: RUN_TIME, type: SECRET }

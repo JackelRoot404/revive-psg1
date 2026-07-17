@@ -1,0 +1,13 @@
+# Normalize only Android's application-facing serial for Google Check-in.
+# The service runs after Android has completed boot, so USB/ADB and Fastboot
+# keep the immutable factory PSG1 serial used for device licensing.
+service revive_psg1_serial /system/bin/revive-psg1-normalize-serial
+    class late_start
+    user root
+    group root
+    seclabel u:r:su:s0
+    disabled
+    oneshot
+
+on property:sys.boot_completed=1
+    start revive_psg1_serial

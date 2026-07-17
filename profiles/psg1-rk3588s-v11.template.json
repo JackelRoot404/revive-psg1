@@ -1,0 +1,17 @@
+{
+  "id": "psg1-rk3588s-v11-api35-v1",
+  "version": 1,
+  "product": "PSG1",
+  "modelPatterns": ["^PSG1$"],
+  "boardPatterns": ["RK3588S.*PSG1.*V11"],
+  "hardwarePatterns": ["rk30board|rk3588"],
+  "soc": "RK3588S",
+  "androidApiLevels": [35],
+  "vendorApiLevels": [35],
+  "firmwarePatterns": ["playsolana/.*/PSG1:15/.*playsolana-20260521-145647.*"],
+  "partitionConstraints": { "system": { "minSize": 2000000000, "maxSize": 4294967296 } },
+  "unlockCommand": "fastboot oem at-unlock-vboot",
+  "requiredArtifacts": [],
+  "expectedCapabilities": { "controls": true, "wifi": true, "audio": true, "fingerprint": false },
+  "diagnosticsCommand": ["am", "instrument", "-w", "com.revivepsg1.diagnostics.test/androidx.test.runner.AndroidJUnitRunner"]
+}

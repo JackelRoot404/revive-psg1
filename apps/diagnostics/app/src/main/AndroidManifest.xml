@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
+    <uses-feature android:name="android.hardware.wifi" android:required="true" />
+    <uses-feature android:name="android.hardware.audio.output" android:required="true" />
+    <uses-feature android:name="android.hardware.fingerprint" android:required="false" />
+
+    <queries>
+        <package android:name="com.android.vending" />
+        <package android:name="com.google.android.gms" />
+        <package android:name="com.google.android.gsf" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:label="Revive PSG1 Diagnostics"
+        android:supportsRtl="true" />
+</manifest>

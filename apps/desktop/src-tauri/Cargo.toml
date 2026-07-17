@@ -1,0 +1,43 @@
+[package]
+name = "revive-psg1"
+version = "0.1.0"
+description = "Deterministic PSG1 Android recovery installer"
+authors = ["Revive PSG1"]
+edition = "2021"
+
+[lib]
+name = "revive_psg1_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_jcs = "0.1"
+sha2 = "0.10"
+hex = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["time"] }
+ed25519-dalek = { version = "2", features = ["pkcs8", "pem", "rand_core"] }
+base64 = "0.22"
+bs58 = "0.5"
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+uuid = { version = "1", features = ["v4"] }
+thiserror = "2"
+rand_core = { version = "0.6", features = ["getrandom"] }
+fs2 = "0.4"
+zip = { version = "4", default-features = false, features = ["deflate"] }
+xz2 = "0.1"
+semver = "1"
+
+[dev-dependencies]
+tempfile = "3"

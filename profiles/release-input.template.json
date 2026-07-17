@@ -1,0 +1,41 @@
+{
+  "releaseId": "00000000-0000-4000-8000-000000000000",
+  "version": "1.0.0-beta.1",
+  "minimumInstallerVersion": "0.1.0-beta.1",
+  "profileIds": ["psg1-rk3588s-v11-api35-v1"],
+  "releaseNotes": "Private beta release. Public sale is disabled.",
+  "publishedAt": "2026-01-01T00:00:00.000Z",
+  "signingKeyId": "release-beta-1",
+  "artifacts": [
+    {
+      "id": "psg1-system-beta-1",
+      "kind": "system",
+      "delivery": "customer_supplied",
+      "component": "google_mobile_services",
+      "path": "work/customer-supplied/system.img",
+      "archivePath": "work/customer-supplied/play-enabled-lineage.img.xz",
+      "source": {
+        "label": "Play-enabled LineageOS image downloaded by the device owner",
+        "instructionsUrl": "https://revivepsg.com/docs/system-image",
+        "archiveFilenamePatterns": ["lineage-*-gapps-*.img.xz"],
+        "extractedPath": "system.img"
+      }
+    },
+    {
+      "id": "psg1-vbmeta-beta-1",
+      "kind": "vbmeta",
+      "delivery": "private",
+      "component": "verified_boot",
+      "path": "work/artifacts/vbmeta.img",
+      "objectKey": "private/releases/1.0.0-beta.1/vbmeta.img"
+    },
+    {
+      "id": "psg1-diagnostics-beta-1",
+      "kind": "apk",
+      "delivery": "private",
+      "component": "diagnostics",
+      "path": "work/artifacts/revive-diagnostics.apk",
+      "objectKey": "private/releases/1.0.0-beta.1/revive-diagnostics.apk"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+#!/system/bin/sh
+# Derive the Google-facing serial from the immutable bootloader serial. Never
+# persist or log the factory value; USB/ADB has already bound before this runs.
+
+factory_serial="$(getprop ro.boot.serialno)"
+normalized_serial="$(printf '%s' "$factory_serial" | tr '[:lower:]' '[:upper:]' | tr -d '[:space:]_-')"
+
+# Google check-in accepts a conservative ASCII alphanumeric hardware ID. Fail
+# closed if a future PSG1 exposes an unexpected or suspicious identifier.
+case "$normalized_serial" in
+  ''|*[!A-Z0-9]*) exit 2 ;;
+esac
+
+[ ${#normalized_serial} -ge 8 ] || exit 3
+[ ${#normalized_serial} -le 64 ] || exit 4
+[ "$normalized_serial" != "$factory_serial" ] || exit 0
+
+exec /system/bin/resetprop_sys -n ro.serialno "$normalized_serial"

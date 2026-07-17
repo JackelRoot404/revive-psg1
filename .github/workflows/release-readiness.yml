@@ -1,0 +1,61 @@
+name: release-readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Exact semver intended for the signed release"
+        required: true
+        type: string
+      commit_sha:
+        description: "Full reviewed commit SHA (branches are not accepted)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-readiness
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: release
+    steps:
+      - name: Require immutable revision
+        env:
+          RELEASE_SHA: ${{ inputs.commit_sha }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          test "${#RELEASE_SHA}" -eq 40
+          case "$RELEASE_SHA" in *[!0-9a-f]*) exit 1;; esac
+          node -e "if (!/^([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?$/.test(process.argv[1])) process.exit(1)" "$RELEASE_VERSION"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - run: apps/diagnostics/gradlew --no-daemon -p apps/diagnostics test lintDebug assembleDebug
+      - name: Block unresolved dependency vulnerabilities
+        run: npm audit --audit-level=high
+      - name: Confirm release remains a reviewed manual handoff
+        run: |
+          echo "Readiness checks passed for ${{ inputs.release_version }} at ${{ inputs.commit_sha }}."
+          echo "This workflow intentionally does not sign, upload, publish, or enable sales."
+          echo "Follow docs/release.md with offline manifest/AVB keys and platform signing identities."

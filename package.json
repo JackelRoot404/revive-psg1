@@ -1,0 +1,26 @@
+{
+  "name": "revive-psg1",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Device-bound self-service Android conversion for PlaySolana PSG1 handhelds.",
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "dev:web": "npm run dev -w @revive-psg1/web",
+    "dev:api": "npm run dev -w @revive-psg1/api",
+    "dev:desktop": "npm run tauri:dev -w @revive-psg1/desktop",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "release:manifest": "node tools/build-release-manifest.mjs",
+    "test:payment:devnet": "REVIVE_DEVNET_PAYMENT_E2E=1 tsx tools/devnet-payment-e2e.ts",
+    "db:generate": "npm run db:generate -w @revive-psg1/api",
+    "db:migrate": "npm run db:migrate -w @revive-psg1/api"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}

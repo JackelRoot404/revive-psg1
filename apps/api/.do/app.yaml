@@ -1,0 +1,85 @@
+name: revive-psg1-api
+region: nyc
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+services:
+  - name: api
+    dockerfile_path: apps/api/Dockerfile
+    github:
+      branch: main
+      deploy_on_push: true
+      repo: REPLACE_WITH_GITHUB_OWNER/REPLACE_WITH_REPOSITORY
+    http_port: 8080
+    health_check:
+      http_path: /healthz
+      initial_delay_seconds: 10
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-1gb
+    alerts:
+      - rule: RESTART_COUNT
+        operator: GREATER_THAN
+        value: 3
+        window: FIVE_MINUTES
+      - rule: MEM_UTILIZATION
+        operator: GREATER_THAN
+        value: 85
+        window: FIVE_MINUTES
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "8080"
+      - key: PUBLIC_SALES_ENABLED
+        value: "false"
+      - key: TREASURY_WALLET
+        value: EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y
+      - key: PUBLIC_WEB_URL
+        value: https://revivepsg.com
+      - key: PUBLIC_API_URL
+        value: https://api.revivepsg.com
+      - key: ALLOWED_ORIGINS
+        value: https://revivepsg.com,https://www.revivepsg.com
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: DATABASE_CA_PEM
+        scope: RUN_TIME
+        type: SECRET
+      - key: VALKEY_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: SESSION_TOKEN_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: LICENSE_PRIVATE_KEY_PEM
+        scope: RUN_TIME
+        type: SECRET
+      - key: LICENSE_PUBLIC_KEY_PEM
+        scope: RUN_TIME
+        type: SECRET
+      - key: LICENSE_KEY_ID
+        value: REPLACE_WITH_ONLINE_LICENSE_KEY_ID
+      - key: RELEASE_PUBLIC_KEY_PEM
+        scope: RUN_TIME
+        type: SECRET
+      - key: SOLANA_RPC_PRIMARY
+        scope: RUN_TIME
+        type: SECRET
+      - key: SOLANA_RPC_FALLBACK
+        scope: RUN_TIME
+        type: SECRET
+      - key: SPACES_ACCESS_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: SPACES_SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: SPACES_REGION
+        value: nyc3
+      - key: SPACES_BUCKET
+        value: REPLACE_WITH_PRIVATE_SPACES_BUCKET
