@@ -50,6 +50,13 @@
       "when": 1784249704056,
       "tag": "0006_milky_jackpot",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784254070499,
+      "tag": "0007_flowery_sandman",
+      "breakpoints": true
     }
   ]
 }

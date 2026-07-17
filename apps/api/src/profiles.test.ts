@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CompatibilityProfile, CompatibilitySnapshot } from "@revive-psg1/contracts";
-import { profileMatches } from "./profiles";
+import type { CompatibilityProfile, CompatibilitySnapshot, WebCompatibilitySnapshot } from "@revive-psg1/contracts";
+import { profileMatches, webPreflightMatches } from "./profiles";
 
 const profile: CompatibilityProfile = {
   id: "psg1-rk3588s-v11-api35-v1",
@@ -38,4 +38,20 @@ describe("fail-closed compatibility matching", () => {
   it("matches the Android API and incremental build explicitly", () => expect(profileMatches(profile, snapshot)).toBe(true));
   it("rejects an Android release number accidentally supplied as API level", () => expect(profileMatches(profile, { ...snapshot, androidApiLevel: 15 })).toBe(false));
   it("rejects an unknown incremental build even when the model matches", () => expect(profileMatches(profile, { ...snapshot, buildIncremental: "unknown", buildFingerprint: "unknown" })).toBe(false));
+});
+
+describe("web destructive preflight", () => {
+  const webSnapshot: WebCompatibilitySnapshot = {
+    ...snapshot,
+    serialVerified: true,
+    usbStable: true,
+    recoveryCapable: true,
+    hostBytesAvailable: 8_000_000_000,
+    systemPartitionBytes: 4_000_000_000
+  };
+
+  it("accepts a fully cross-checked device with adequate host capacity", () => expect(webPreflightMatches(profile, webSnapshot)).toBe(true));
+  it("rejects a partition outside the signed profile", () => expect(webPreflightMatches(profile, { ...webSnapshot, systemPartitionBytes: 5_000_000_000 })).toBe(false));
+  it("rejects low battery unless the device is charging", () => expect(webPreflightMatches(profile, { ...webSnapshot, batteryPercent: 20, charging: false })).toBe(false));
+  it("rejects inadequate browser storage", () => expect(webPreflightMatches(profile, { ...webSnapshot, hostBytesAvailable: 1_000_000_000 })).toBe(false));
 });

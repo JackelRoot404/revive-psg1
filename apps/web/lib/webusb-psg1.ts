@@ -1,0 +1,245 @@
+import { Adb, AdbDaemonTransport } from "@yume-chan/adb";
+import AdbWebCredentialStore from "@yume-chan/adb-credential-web";
+import { AdbDaemonWebUsbDeviceManager } from "@yume-chan/adb-daemon-webusb";
+
+export const ROCKCHIP_VENDOR_ID = 0x2207;
+export const FASTBOOT_INTERFACE = Object.freeze({ classCode: 0xff, subclassCode: 0x42, protocolCode: 0x03 });
+const DEVICE_ID_DOMAIN = "revive-psg1:v1";
+
+export type WebCompatibilityScan = {
+  deviceId: string;
+  product: string;
+  model: string;
+  board: string;
+  hardware: string;
+  buildFingerprint: string;
+  buildIncremental: string;
+  androidApiLevel: number;
+  vendorApiLevel: number;
+  batteryPercent: number;
+  charging: boolean;
+  serialVerified: boolean;
+  usbStable: boolean;
+  recoveryCapable: boolean;
+  hostBytesAvailable: number;
+  systemPartitionBytes: number;
+};
+
+export class WebAdbPsg1 {
+  readonly adb: Adb;
+  readonly normalizedSerial: string;
+
+  private constructor(adb: Adb, normalizedSerial: string) {
+    this.adb = adb;
+    this.normalizedSerial = normalizedSerial;
+  }
+
+  static supported(): boolean {
+    return typeof navigator !== "undefined" && Boolean(navigator.usb) && window.isSecureContext;
+  }
+
+  static async request(): Promise<WebAdbPsg1> {
+    const manager = AdbDaemonWebUsbDeviceManager.BROWSER;
+    if (!manager || !WebAdbPsg1.supported()) {
+      throw new Error("WebUSB requires desktop Chrome or Edge on a secure HTTPS page.");
+    }
+    const device = await manager.requestDevice({ filters: [{ vendorId: ROCKCHIP_VENDOR_ID }] });
+    if (!device) throw new Error("No PSG1 ADB interface was selected.");
+    const usbSerial = normalizeSerial(device.raw.serialNumber ?? device.serial);
+    if (!usbSerial) throw new Error("The PSG1 USB descriptor did not expose a serial number.");
+    const connection = await device.connect();
+    const transport = await AdbDaemonTransport.authenticate({
+      serial: device.serial,
+      connection,
+      credentialStore: new AdbWebCredentialStore("Revive PSG1 Web")
+    });
+    const adb = new Adb(transport);
+    const adbSerial = normalizeSerial(adb.serial);
+    if (!adbSerial || adbSerial !== usbSerial) {
+      await adb.close();
+      throw new Error("ADB and USB descriptor serials do not match.");
+    }
+    return new WebAdbPsg1(adb, adbSerial);
+  }
+
+  async readCompatibility(): Promise<Omit<WebCompatibilityScan, "deviceId" | "systemPartitionBytes" | "serialVerified">> {
+    const [product, model, board, hardware, buildFingerprint, buildIncremental, androidApi, vendorApi, battery, recovery, storage] = await Promise.all([
+      firstProp(this.adb, ["ro.product.vendor.device", "ro.product.odm.device", "ro.product.device"]),
+      firstProp(this.adb, ["ro.product.vendor.model", "ro.product.odm.model", "ro.product.model"]),
+      boardIdentity(this.adb),
+      firstProp(this.adb, ["ro.soc.model", "ro.hardware", "ro.boot.hardware"]),
+      this.adb.getProp("ro.build.fingerprint"),
+      this.adb.getProp("ro.build.version.incremental"),
+      this.adb.getProp("ro.build.version.sdk"),
+      this.adb.getProp("ro.vendor.build.version.sdk"),
+      this.adb.subprocess.noneProtocol.spawnWaitText(["dumpsys", "battery"]),
+      this.adb.subprocess.noneProtocol.spawnWaitText(["sh", "-c", "if [ -x /system/bin/reboot ]; then echo yes; fi"]),
+      navigator.storage.estimate()
+    ]);
+    const batteryPercent = Math.min(100, parseBatteryNumber(battery, "level"));
+    const status = parseBatteryNumber(battery, "status");
+    const serialAgain = normalizeSerial(this.adb.serial);
+    return {
+      product: product.trim(), model: model.trim(), board: board.trim(), hardware: hardware.trim(),
+      buildFingerprint: buildFingerprint.trim(), buildIncremental: buildIncremental.trim(),
+      androidApiLevel: parseInteger(androidApi), vendorApiLevel: parseInteger(vendorApi),
+      batteryPercent, charging: status === 2 || status === 5,
+      usbStable: serialAgain === this.normalizedSerial,
+      recoveryCapable: recovery.trim() === "yes",
+      hostBytesAvailable: Math.max(0, (storage.quota ?? 0) - (storage.usage ?? 0))
+    };
+  }
+
+  async rebootBootloader(): Promise<void> {
+    await this.adb.subprocess.noneProtocol.spawnWaitText(["reboot", "bootloader"]);
+  }
+
+  async close(): Promise<void> {
+    await this.adb.close();
+  }
+}
+
+async function firstProp(adb: Adb, names: string[]): Promise<string> {
+  for (const name of names) {
+    const value = (await adb.getProp(name)).trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+async function boardIdentity(adb: Adb): Promise<string> {
+  const [soc, revision, fallback] = await Promise.all([
+    firstProp(adb, ["ro.soc.model", "ro.board.platform"]),
+    firstProp(adb, ["ro.vendor.sdkversion", "ro.tyzc.version"]),
+    firstProp(adb, ["ro.product.board", "ro.boot.hardware"])
+  ]);
+  return [soc, revision].filter(Boolean).join(" ") || fallback;
+}
+
+export class WebFastbootPsg1 {
+  readonly raw: USBDevice;
+  readonly normalizedUsbSerial: string;
+  private readonly inEndpoint: number;
+  private readonly outEndpoint: number;
+  private readonly interfaceNumber: number;
+
+  private constructor(raw: USBDevice, interfaceNumber: number, inEndpoint: number, outEndpoint: number) {
+    this.raw = raw;
+    this.interfaceNumber = interfaceNumber;
+    this.inEndpoint = inEndpoint;
+    this.outEndpoint = outEndpoint;
+    this.normalizedUsbSerial = normalizeSerial(raw.serialNumber ?? "");
+  }
+
+  static supported(): boolean {
+    return typeof navigator !== "undefined" && Boolean(navigator.usb) && window.isSecureContext;
+  }
+
+  static async request(): Promise<WebFastbootPsg1> {
+    if (!WebFastbootPsg1.supported()) throw new Error("Fastboot over WebUSB requires desktop Chrome or Edge over HTTPS.");
+    const raw = await navigator.usb.requestDevice({ filters: [{ vendorId: ROCKCHIP_VENDOR_ID, ...FASTBOOT_INTERFACE }] });
+    await raw.open();
+    if (!raw.configuration) await raw.selectConfiguration(raw.configurations[0]?.configurationValue ?? 1);
+    const match = findFastbootInterface(raw.configuration);
+    if (!match) {
+      await raw.close();
+      throw new Error("The selected USB device does not expose the PSG1 Fastboot bulk interface.");
+    }
+    await raw.claimInterface(match.interfaceNumber);
+    return new WebFastbootPsg1(raw, match.interfaceNumber, match.inEndpoint, match.outEndpoint);
+  }
+
+  async getVariable(name: string): Promise<string> {
+    return this.command(`getvar:${name}`);
+  }
+
+  async reboot(): Promise<void> {
+    await this.command("reboot");
+  }
+
+  async close(): Promise<void> {
+    try { await this.raw.releaseInterface(this.interfaceNumber); } finally { await this.raw.close(); }
+  }
+
+  private async command(command: string): Promise<string> {
+    const encoded = new TextEncoder().encode(command);
+    if (encoded.byteLength > 64 || !/^[\x20-\x7e]+$/u.test(command)) throw new Error("Fastboot command is invalid.");
+    const sent = await this.raw.transferOut(this.outEndpoint, encoded);
+    if (sent.status !== "ok" || sent.bytesWritten !== encoded.byteLength) throw new Error("Fastboot command transfer failed.");
+    const info: string[] = [];
+    for (let attempt = 0; attempt < 512; attempt += 1) {
+      const response = await this.raw.transferIn(this.inEndpoint, 64);
+      if (response.status !== "ok" || !response.data) throw new Error("Fastboot response transfer failed.");
+      const parsed = parseFastbootResponse(new Uint8Array(response.data.buffer, response.data.byteOffset, response.data.byteLength));
+      if (parsed.status === "INFO") { info.push(parsed.payload); continue; }
+      if (parsed.status === "FAIL") throw new Error(`Fastboot rejected the command: ${parsed.payload || info.at(-1) || "unknown error"}`);
+      if (parsed.status === "DATA") throw new Error("Unexpected Fastboot data phase during read-only web preflight.");
+      return parsed.payload || info.at(-1) || "";
+    }
+    throw new Error("Fastboot produced too many informational responses.");
+  }
+}
+
+export async function finalizeWebScan(
+  adbScan: Omit<WebCompatibilityScan, "deviceId" | "systemPartitionBytes" | "serialVerified">,
+  adbSerial: string,
+  fastboot: WebFastbootPsg1
+): Promise<WebCompatibilityScan> {
+  const fastbootSerial = normalizeSerial((await fastboot.getVariable("serialno")) || fastboot.normalizedUsbSerial);
+  const usbSerial = fastboot.normalizedUsbSerial;
+  if (!fastbootSerial || fastbootSerial !== adbSerial || (usbSerial && usbSerial !== adbSerial)) {
+    throw new Error("ADB, Fastboot, and USB descriptor serials do not match. No payment or modification is allowed.");
+  }
+  const systemValue = await fastboot.getVariable("partition-size:system").catch(() => fastboot.getVariable("partition-size:system_a"));
+  const systemPartitionBytes = parseFastbootSize(systemValue);
+  if (!systemPartitionBytes) throw new Error("Fastboot did not report a valid system partition size.");
+  return {
+    ...adbScan,
+    deviceId: await deviceIdForSerial(fastbootSerial),
+    systemPartitionBytes,
+    serialVerified: true
+  };
+}
+
+export function normalizeSerial(value: string): string {
+  return value.trim().replace(/[-_\s]/gu, "").toUpperCase();
+}
+
+export async function deviceIdForSerial(serial: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${DEVICE_ID_DOMAIN}${normalizeSerial(serial)}`));
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+export function parseFastbootResponse(bytes: Uint8Array): { status: "OKAY" | "FAIL" | "INFO" | "DATA"; payload: string } {
+  const text = new TextDecoder().decode(bytes).replace(/\0+$/u, "");
+  const status = text.slice(0, 4);
+  if (!(["OKAY", "FAIL", "INFO", "DATA"] as const).includes(status as "OKAY")) throw new Error("Fastboot returned an unknown status.");
+  return { status: status as "OKAY" | "FAIL" | "INFO" | "DATA", payload: text.slice(4).trim() };
+}
+
+export function parseFastbootSize(value: string): number {
+  const trimmed = value.trim();
+  const parsed = /^0x[0-9a-f]+$/iu.test(trimmed) ? Number.parseInt(trimmed.slice(2), 16) : Number.parseInt(trimmed, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function findFastbootInterface(configuration: USBConfiguration | null): { interfaceNumber: number; inEndpoint: number; outEndpoint: number } | null {
+  for (const interface_ of configuration?.interfaces ?? []) {
+    for (const alternate of interface_.alternates) {
+      if (alternate.interfaceClass !== FASTBOOT_INTERFACE.classCode || alternate.interfaceSubclass !== FASTBOOT_INTERFACE.subclassCode || alternate.interfaceProtocol !== FASTBOOT_INTERFACE.protocolCode) continue;
+      const input = alternate.endpoints.find((endpoint) => endpoint.type === "bulk" && endpoint.direction === "in");
+      const output = alternate.endpoints.find((endpoint) => endpoint.type === "bulk" && endpoint.direction === "out");
+      if (input && output) return { interfaceNumber: interface_.interfaceNumber, inEndpoint: input.endpointNumber, outEndpoint: output.endpointNumber };
+    }
+  }
+  return null;
+}
+
+function parseBatteryNumber(value: string, key: string): number {
+  return Number.parseInt(value.match(new RegExp(`^\\s*${key}:\\s*(\\d+)`, "mu"))?.[1] ?? "0", 10) || 0;
+}
+
+function parseInteger(value: string): number {
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}

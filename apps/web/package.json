@@ -19,14 +19,19 @@
     "@wallet-standard/app": "1.1.1",
     "@wallet-standard/base": "1.1.1",
     "@wallet-standard/features": "1.1.1",
+    "@yume-chan/adb": "^2.6.0",
+    "@yume-chan/adb-credential-web": "^2.1.0",
+    "@yume-chan/adb-daemon-webusb": "^2.3.2",
     "bs58": "^6.0.0",
     "next": "16.2.10",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
+    "@types/w3c-web-usb": "^1.0.14",
     "eslint": "^9.39.1",
     "eslint-config-next": "16.2.10",
     "vite": "8.1.5",

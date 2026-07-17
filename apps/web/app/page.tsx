@@ -7,10 +7,10 @@ export default function Home() {
   const downloadsOpen = publicSalesState !== "closed";
   return <main>
     <section className="hero">
-      <div className="eyebrow"><span className="pulse" /> SELF-SERVICE DESKTOP INSTALLER</div>
+      <div className="eyebrow"><span className="pulse" /> SELF-SERVICE WEB INSTALLER</div>
       <h1>Revive your <em>PSG1.</em></h1>
       <p className="hero-copy">Convert your unused PSG1 into a general-purpose Android gaming handheld—with working physical controls and a careful, recoverable install flow.</p>
-      <div className="hero-actions"><a className="button primary" href="#download">Download beta</a><Link className="button ghost" href="/docs">See the process</Link></div>
+      <div className="hero-actions"><Link className="button primary" href="/wizard">Start web wizard</Link><Link className="button ghost" href="/docs">See the process</Link></div>
       <div className="trust-row"><span>✓ Free compatibility scan</span><span>✓ One device, one license</span><span>✓ Released updates included</span></div>
       <div className="device-card" aria-label="Revive installation preview">
         <div className="device-screen">
@@ -29,7 +29,7 @@ export default function Home() {
     <section className="section steps">
       <span className="section-label">THREE CONTROLLED STAGES</span>
       <div className="step-grid">
-        <article><b>01</b><h3>Scan</h3><p>Connect over USB. Revive checks serial consistency, firmware, battery, storage, and recovery support—free.</p></article>
+        <article><b>01</b><h3>Scan</h3><p>Open desktop Chrome or Edge and connect over USB. Revive checks serial consistency, firmware, battery, storage, and recovery support—free.</p></article>
         <article><b>02</b><h3>License</h3><p>Pay 29 USDC from a paired wallet extension. The permanent entitlement binds to your PSG1, not the wallet.</p></article>
         <article><b>03</b><h3>Revive</h3><p>Follow the guided unlock and install. Every artifact is signed and verified before the device is modified.</p></article>
       </div>
@@ -48,11 +48,11 @@ export default function Home() {
     </section>
 
     <section id="download" className="section download-panel">
-      <div><span className="section-label">{publicSalesState === "public" ? "SIGNED RELEASE" : "PRIVATE BETA"}</span><h2>Start with the free scan.</h2><p>{publicSalesState === "public" ? "Download only from this page and verify the publisher signature before connecting a PSG1." : "Public sales stay off until the ten-device Windows and macOS safety cohort passes."}</p></div>
+      <div><span className="section-label">DEPRECATED DESKTOP FALLBACK</span><h2>Native recovery tools remain available.</h2><p>The web wizard is the primary experience. Signed macOS and Windows apps are retained as a deprecated fallback for unsupported browsers, Windows USB-driver limitations, and recovery.</p></div>
       <div className="download-actions">
         <DownloadLink platform="macOS" href={downloadsOpen ? releaseDownloads.macos : null} />
         <DownloadLink platform="Windows" href={downloadsOpen ? releaseDownloads.windows : null} secondary />
-        <small>Downloads remain disabled until signed packages and official URLs are configured. Never use an unofficial mirror.</small>
+        <small>{downloadsOpen ? "Use only signed builds from revivepsg.com." : "Fallback downloads remain disabled until signed packages and official URLs are configured."} Never use an unofficial mirror.</small>
       </div>
     </section>
   </main>;

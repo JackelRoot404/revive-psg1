@@ -21,6 +21,14 @@ export const compatibilitySnapshotSchema = z.object({
   charging: z.boolean()
 });
 
+export const webCompatibilitySnapshotSchema = compatibilitySnapshotSchema.extend({
+  serialVerified: z.literal(true),
+  usbStable: z.literal(true),
+  recoveryCapable: z.literal(true),
+  hostBytesAvailable: z.number().int().nonnegative(),
+  systemPartitionBytes: z.number().int().positive()
+});
+
 export const sessionCreateSchema = z.object({
   deviceId: deviceIdSchema,
   pairingPublicKey: publicKeySchema,
@@ -30,6 +38,17 @@ export const sessionCreateSchema = z.object({
   createdAt: z.string().datetime(),
   hostOs: z.enum(["windows", "macos"]),
   compatibility: compatibilitySnapshotSchema
+});
+
+export const webSessionCreateSchema = z.object({
+  deviceId: deviceIdSchema,
+  pairingPublicKey: publicKeySchema,
+  pairingProof: signatureSchema,
+  appVersion: z.string().min(1).max(32),
+  requestNonce: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/),
+  createdAt: z.string().datetime(),
+  hostOs: z.literal("web"),
+  compatibility: webCompatibilitySnapshotSchema
 });
 
 export const walletChallengeRequestSchema = z.object({
@@ -52,6 +71,17 @@ export const browserProofStatusSchema = z.object({
 });
 
 export const walletVerifySchema = z.object({
+  challengeId: uuidSchema,
+  signature: signatureSchema
+});
+
+export const webInstallerChallengeRequestSchema = z.object({
+  sessionId: uuidSchema,
+  orderId: uuidSchema,
+  wallet: solanaAddressSchema
+});
+
+export const webInstallerVerifySchema = z.object({
   challengeId: uuidSchema,
   signature: signatureSchema
 });
@@ -174,5 +204,6 @@ export const releaseManifestSchema = z.object({
 
 export type SessionCreateInput = z.infer<typeof sessionCreateSchema>;
 export type CompatibilitySnapshot = z.infer<typeof compatibilitySnapshotSchema>;
+export type WebCompatibilitySnapshot = z.infer<typeof webCompatibilitySnapshotSchema>;
 export type CompatibilityProfile = z.infer<typeof compatibilityProfileSchema>;
 export type ReleaseManifest = z.infer<typeof releaseManifestSchema>;

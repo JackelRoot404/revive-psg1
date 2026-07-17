@@ -14,7 +14,9 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-export const hostOsEnum = pgEnum("host_os", ["windows", "macos"]);
+export const hostOsEnum = pgEnum("host_os", ["windows", "macos", "web"]);
+export const sessionChannelEnum = pgEnum("session_channel", ["desktop", "web"]);
+export const walletChallengePurposeEnum = pgEnum("wallet_challenge_purpose", ["checkout", "web_installer"]);
 export const orderKindEnum = pgEnum("order_kind", ["paid", "promo"]);
 export const orderStatusEnum = pgEnum("order_status", [
   "awaiting_payment",
@@ -33,6 +35,7 @@ export const sessions = pgTable("sessions", {
   appVersion: varchar("app_version", { length: 32 }).notNull(),
   requestNonceHash: varchar("request_nonce_hash", { length: 64 }).notNull(),
   hostOs: hostOsEnum("host_os").notNull(),
+  channel: sessionChannelEnum("channel").notNull().default("desktop"),
   compatibility: jsonb("compatibility").notNull(),
   profileId: varchar("profile_id", { length: 120 }),
   supported: boolean("supported").notNull().default(false),
@@ -63,6 +66,9 @@ export const walletChallenges = pgTable("wallet_challenges", {
   id: uuid("id").primaryKey(),
   sessionId: uuid("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
   wallet: varchar("wallet", { length: 44 }).notNull(),
+  purpose: walletChallengePurposeEnum("purpose").notNull().default("checkout"),
+  orderId: uuid("order_id"),
+  licenseId: uuid("license_id"),
   message: text("message").notNull(),
   nonce: varchar("nonce", { length: 96 }).notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

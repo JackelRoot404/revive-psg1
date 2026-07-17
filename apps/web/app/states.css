@@ -26,10 +26,24 @@ footer > span { max-width: 520px; }
 .wallet-account { padding: 12px 14px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); }
 .wallet-account code { color: var(--ink); }
 
+.wizard-shell { min-height: 80vh; padding: 70px 22px; }
+.wizard-card { width: min(100%, 760px); margin: auto; background: var(--panel); border: 1px solid var(--line); padding: 42px; }
+.wizard-heading h1 { font-size: clamp(46px, 7vw, 76px); line-height: .94; letter-spacing: -.06em; margin: 18px 0; }
+.wizard-heading > p, .wizard-step > p { color: var(--muted); line-height: 1.6; }
+.wizard-step { margin-top: 32px; padding-top: 28px; border-top: 1px solid var(--line); }
+.wizard-step small { display: block; color: var(--muted); margin-top: 14px; line-height: 1.5; }
+.step-title { display: flex; align-items: center; gap: 14px; }
+.step-title b { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--acid); color: var(--acid); font: 12px monospace; }
+.step-title h2 { margin: 0; font-size: 28px; }
+.scan-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0; }
+.scan-summary span { padding: 9px 11px; border: 1px solid var(--line); font: 11px monospace; color: #d6dbd7; }
+
 @media (max-width: 800px) {
   .limitation-grid { grid-template-columns: 1fr; }
   footer { align-items: flex-start; flex-direction: column; }
   footer nav { display: flex; flex-wrap: wrap; }
   .checkout-security { flex-wrap: wrap; }
   .wallet-list { grid-template-columns: 1fr; }
+  .wizard-card { padding: 25px; }
+  .wizard-shell { padding: 38px 14px; }
 }

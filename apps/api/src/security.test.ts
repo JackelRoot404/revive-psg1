@@ -30,4 +30,24 @@ describe("TokenService", () => {
     const token = await service.issueSessionToken({ audience: "checkout", subject: "session", sessionId: "session", deviceId: "d".repeat(64) });
     await expect(service.verifySessionToken(token, "browser-checkout")).rejects.toThrow();
   });
+
+  it("keeps web installer tokens isolated from checkout and wallet authorization", async () => {
+    const service = new TokenService(config);
+    const token = await service.issueSessionToken({
+      audience: "web-installer", subject: "00000000-0000-4000-8000-000000000001",
+      sessionId: "00000000-0000-4000-8000-000000000002", deviceId: "d".repeat(64),
+      wallet: config.treasuryWallet, expiresIn: "10m"
+    });
+    const claim = await service.verifySessionToken(token, "web-installer");
+    expect(claim.sub).toBe("00000000-0000-4000-8000-000000000001");
+    expect(claim.wallet).toBe(config.treasuryWallet);
+    await expect(service.verifySessionToken(token, "browser-checkout")).rejects.toThrow();
+    await expect(service.verifySessionToken(token, "wallet")).rejects.toThrow();
+  });
+
+  it("does not accept a desktop license token as web installer session authorization", async () => {
+    const service = new TokenService(config);
+    const token = await service.issueLicenseToken({ licenseId: "license-1", deviceId: "d".repeat(64), wallet: config.treasuryWallet });
+    await expect(service.verifySessionToken(token, "web-installer")).rejects.toThrow();
+  });
 });

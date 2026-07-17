@@ -136,17 +136,41 @@ struct Props {
 }
 impl Props {
     fn read() -> Result<Self, String> {
+        let soc = prop_first(&["ro.soc.model", "ro.board.platform"])?;
+        let revision = prop_first(&["ro.vendor.sdkversion", "ro.tyzc.version"])?;
+        let board = if soc.is_empty() && revision.is_empty() {
+            prop_first(&["ro.product.board", "ro.boot.hardware"])?
+        } else {
+            format!("{soc} {revision}").trim().to_string()
+        };
         Ok(Self {
-            product: prop("ro.product.device")?,
-            model: prop("ro.product.model")?,
-            board: prop("ro.product.board")?,
-            hardware: prop("ro.hardware")?,
+            product: prop_first(&[
+                "ro.product.vendor.device",
+                "ro.product.odm.device",
+                "ro.product.device",
+            ])?,
+            model: prop_first(&[
+                "ro.product.vendor.model",
+                "ro.product.odm.model",
+                "ro.product.model",
+            ])?,
+            board,
+            hardware: prop_first(&["ro.soc.model", "ro.hardware", "ro.boot.hardware"])?,
             fingerprint: prop("ro.build.fingerprint")?,
             incremental: prop("ro.build.version.incremental")?,
             android_api_level: prop("ro.build.version.sdk")?.parse().unwrap_or(0),
             vendor_api_level: prop("ro.vendor.build.version.sdk")?.parse().unwrap_or(0),
         })
     }
+}
+fn prop_first(names: &[&str]) -> Result<String, String> {
+    for name in names {
+        let value = prop(name)?;
+        if !value.is_empty() {
+            return Ok(value);
+        }
+    }
+    Ok(String::new())
 }
 fn prop(name: &str) -> Result<String, String> {
     run("adb", &["shell", "getprop", name])

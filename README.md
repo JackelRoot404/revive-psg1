@@ -1,6 +1,6 @@
 # Revive PSG1
 
-Self-service software for converting a compatible PlaySolana PSG1 into a general-purpose Android gaming handheld. The product is split into a signed Tauri desktop installer, a Netlify-hosted Next.js site/checkout, and a Fastify API designed for DigitalOcean App Platform.
+Self-service software for converting a compatible PlaySolana PSG1 into a general-purpose Android gaming handheld. The primary product is a Netlify-hosted Chrome/Edge WebUSB wizard backed by a Fastify API on DigitalOcean App Platform. The signed Tauri desktop installers remain in the repository as deprecated recovery fallbacks.
 
 > **Pre-beta / fail-closed.** Paid checkout, public downloads, and destructive installation remain disabled until the browser-proof suite, signing/provenance, restoration, dependency/legal work, and every launch gate pass. Do not distribute experimental images.
 
@@ -8,7 +8,7 @@ Self-service software for converting a compatible PlaySolana PSG1 into a general
 
 - Read-only ADB → USB descriptor → Fastboot serial cross-check and stable SHA-256 device binding.
 - Signed firmware-profile matching and unknown-firmware rejection.
-- Browser-nonce + desktop-direct same-computer proof, wallet challenge, exact 29 USDC construction, finalized verification, one-use references, and device-bound licensing. The production web gate remains off until end-to-end proof tests pass.
+- Signed ephemeral web sessions, a free WebUSB ADB/Fastboot identity scan, Wallet Standard checkout, exact 29 USDC construction, finalized verification, purpose-bound receipt-wallet installer authorization, one-use references, and device-bound licensing.
 - Backend-approved, one-time beta invites bound to a scanned device and atomically capped at ten redemptions; `BICCSDEV` is an internal program label, not a public coupon.
 - Recoverable device entitlement independent of the paying wallet, protected by a one-time-revealed, owner-saved recovery credential that the desktop never persists.
 - Journaled allowlisted installer engine for `fastboot oem at-unlock-vboot`, validated fastbootd, vbmeta/system flashing, wipe, and reboot.
@@ -29,9 +29,9 @@ Self-service software for converting a compatible PlaySolana PSG1 into a general
 ## Repository
 
 ```text
-apps/web       Next.js website and injected-wallet checkout (Netlify)
+apps/web       Next.js website, WebUSB wizard, and injected-wallet checkout (Netlify)
 apps/api       Fastify API, Drizzle schema/migrations, Solana verification (DigitalOcean)
-apps/desktop   React/Tauri UI and Rust scanner/installer (Windows/macOS)
+apps/desktop   Deprecated signed recovery fallback (Windows/macOS)
 packages/contracts  Shared Zod schemas, messages, constants
 profiles       Unsigned compatibility-profile source templates
 tools          Offline signing utilities (private keys are never committed)

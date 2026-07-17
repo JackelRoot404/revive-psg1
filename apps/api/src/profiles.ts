@@ -1,6 +1,6 @@
 import { verify } from "node:crypto";
 import canonicalize from "canonicalize";
-import type { CompatibilityProfile, CompatibilitySnapshot } from "@revive-psg1/contracts";
+import type { CompatibilityProfile, CompatibilitySnapshot, WebCompatibilitySnapshot } from "@revive-psg1/contracts";
 
 function matches(value: string, patterns: string[]): boolean {
   return patterns.some((pattern) => new RegExp(pattern, "i").test(value));
@@ -28,4 +28,16 @@ export function profileMatches(profile: CompatibilityProfile, snapshot: Compatib
       const expression = new RegExp(pattern, "i");
       return expression.test(snapshot.buildFingerprint) || expression.test(snapshot.buildIncremental);
     });
+}
+
+export function webPreflightMatches(profile: CompatibilityProfile, snapshot: WebCompatibilitySnapshot): boolean {
+  const system = profile.partitionConstraints.system;
+  return snapshot.serialVerified
+    && snapshot.usbStable
+    && snapshot.recoveryCapable
+    && Boolean(system)
+    && snapshot.systemPartitionBytes >= system!.minSize
+    && snapshot.systemPartitionBytes <= system!.maxSize
+    && snapshot.hostBytesAvailable >= snapshot.systemPartitionBytes
+    && (snapshot.batteryPercent >= 50 || snapshot.charging);
 }

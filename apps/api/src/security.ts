@@ -33,7 +33,7 @@ export function verifyEd25519Base58(input: { publicKey: string; signature: strin
   }
 }
 
-type TokenAudience = "desktop-session" | "checkout" | "browser-checkout" | "wallet";
+type TokenAudience = "desktop-session" | "checkout" | "browser-checkout" | "wallet" | "web-installer";
 
 export class TokenService {
   private readonly sessionSecret: Uint8Array;

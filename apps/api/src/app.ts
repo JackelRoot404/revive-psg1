@@ -33,6 +33,12 @@ import {
   walletChallengeMessage,
   walletChallengeRequestSchema,
   walletVerifySchema,
+  webInstallerChallengeRequestSchema,
+  webInstallerVerifySchema,
+  webInstallerWalletChallengeMessage,
+  webCheckoutWalletChallengeMessage,
+  webSessionCreateSchema,
+  webSessionProofMessage,
   uuidSchema
 } from "@revive-psg1/contracts";
 import type { Config } from "./config";
@@ -55,7 +61,7 @@ import {
   walletChallenges
 } from "./db/schema";
 import { audit } from "./audit";
-import { profileMatches, verifySignedDocument } from "./profiles";
+import { profileMatches, verifySignedDocument, webPreflightMatches } from "./profiles";
 import { SolanaPaymentVerifier } from "./payment";
 import { bearerToken, randomNonce, randomSolanaAddress, safeEqualHex, sha256, TokenService, verifyEd25519Base58 } from "./security";
 import { ArtifactStorage } from "./storage";
@@ -138,6 +144,7 @@ export async function buildApp(dependencies: Dependencies) {
         appVersion: input.appVersion,
         requestNonceHash: sha256(input.requestNonce),
         hostOs: input.hostOs,
+        channel: "desktop",
         compatibility: input.compatibility,
         profileId: matched?.id,
         supported: Boolean(matched),
@@ -158,6 +165,61 @@ export async function buildApp(dependencies: Dependencies) {
       profileSignature: matched?.signature ?? null,
       desktopToken,
       checkoutUrl: `${config.publicWebUrl}/checkout/${id}#token=${encodeURIComponent(checkoutToken)}`,
+      expiresAt: expiresAt.toISOString()
+    });
+  });
+
+  app.post("/v1/web/sessions", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+    const input = webSessionCreateSchema.parse(request.body);
+    if (Math.abs(Date.now() - Date.parse(input.createdAt)) > 5 * 60_000) {
+      return reply.code(400).send({ code: "SESSION_PROOF_EXPIRED" });
+    }
+    const proofMessage = webSessionProofMessage(input);
+    if (!verifyEd25519Base58({ publicKey: input.pairingPublicKey, signature: input.pairingProof, message: proofMessage })) {
+      return reply.code(401).send({ code: "INVALID_PAIRING_PROOF", message: "Web pairing proof is invalid" });
+    }
+    const activeProfiles = await db.select().from(compatibilityProfiles).where(eq(compatibilityProfiles.active, true));
+    const matched = activeProfiles.find((row) => {
+      const parsed = compatibilityProfileSchema.safeParse({ ...(row.signedDocument as object), signature: row.signature });
+      return parsed.success
+        && verifySignedDocument(row.signedDocument, row.signature, config.releasePublicKeyPem)
+        && profileMatches(parsed.data, input.compatibility)
+        && webPreflightMatches(parsed.data, input.compatibility);
+    });
+    const id = randomUUID();
+    const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
+    try {
+      await db.insert(sessions).values({
+        id,
+        deviceId: input.deviceId,
+        pairingPublicKey: input.pairingPublicKey,
+        appVersion: input.appVersion,
+        requestNonceHash: sha256(input.requestNonce),
+        hostOs: "web",
+        channel: "web",
+        compatibility: input.compatibility,
+        profileId: matched?.id,
+        supported: Boolean(matched),
+        expiresAt
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) return reply.code(409).send({ code: "SESSION_PROOF_REPLAYED" });
+      throw error;
+    }
+    const browserToken = await tokens.issueSessionToken({
+      audience: "browser-checkout",
+      subject: input.pairingPublicKey,
+      sessionId: id,
+      deviceId: input.deviceId
+    });
+    await audit(db, "session.created", { actor: input.deviceId, subjectId: id, payload: { channel: "web", supported: Boolean(matched), profileId: matched?.id } });
+    return reply.code(201).send({
+      sessionId: id,
+      supported: Boolean(matched),
+      profileId: matched?.id ?? null,
+      profile: matched?.signedDocument ?? null,
+      profileSignature: matched?.signature ?? null,
+      browserToken,
       expiresAt: expiresAt.toISOString()
     });
   });
@@ -243,11 +305,17 @@ export async function buildApp(dependencies: Dependencies) {
     if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
     const session = await activeSession(db, input.sessionId);
     if (!session?.supported) return reply.code(409).send({ code: "UNSUPPORTED_FIRMWARE" });
-    if (!session.browserVerifiedAt) return reply.code(403).send({ code: "LOCAL_DESKTOP_PROOF_REQUIRED" });
+    if (session.channel === "desktop") {
+      if (!session.browserVerifiedAt) return reply.code(403).send({ code: "LOCAL_DESKTOP_PROOF_REQUIRED" });
+    } else if (session.channel === "web") {
+      if (auth.sub !== session.pairingPublicKey) return reply.code(403).send({ code: "WEB_PAIRING_REQUIRED" });
+    } else {
+      return reply.code(403).send({ code: "SESSION_CHANNEL_INVALID" });
+    }
     const id = randomUUID();
     const nonce = randomNonce();
     const expiresAt = new Date(Date.now() + 5 * 60_000);
-    const message = walletChallengeMessage({
+    const challengeInput = {
       domain: new URL(config.publicWebUrl).host,
       challengeId: id,
       sessionId: session.id,
@@ -256,8 +324,11 @@ export async function buildApp(dependencies: Dependencies) {
       wallet: input.wallet,
       nonce,
       expiresAt: expiresAt.toISOString()
-    });
-    await db.insert(walletChallenges).values({ id, sessionId: session.id, wallet: input.wallet, message, nonce, expiresAt });
+    };
+    const message = session.channel === "web"
+      ? webCheckoutWalletChallengeMessage(challengeInput)
+      : walletChallengeMessage(challengeInput);
+    await db.insert(walletChallenges).values({ id, sessionId: session.id, wallet: input.wallet, purpose: "checkout", message, nonce, expiresAt });
     return reply.code(201).send({ challengeId: id, message, expiresAt: expiresAt.toISOString() });
   });
 
@@ -266,6 +337,7 @@ export async function buildApp(dependencies: Dependencies) {
     const input = walletVerifySchema.parse(request.body);
     const [challenge] = await db.select().from(walletChallenges).where(and(
       eq(walletChallenges.id, input.challengeId),
+      eq(walletChallenges.purpose, "checkout"),
       gt(walletChallenges.expiresAt, new Date())
     )).limit(1);
     if (!challenge || challenge.consumedAt || checkout.sessionId !== challenge.sessionId) {
@@ -289,6 +361,105 @@ export async function buildApp(dependencies: Dependencies) {
     return { walletToken };
   });
 
+  app.post("/v1/web/wizard/challenge", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+    const auth = await requireToken(request, tokens, "browser-checkout");
+    const input = webInstallerChallengeRequestSchema.parse(request.body);
+    if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
+    const session = await activeSession(db, input.sessionId);
+    if (!session || session.channel !== "web" || auth.sub !== session.pairingPublicKey) {
+      return reply.code(403).send({ code: "WEB_PAIRING_REQUIRED" });
+    }
+    const [order] = await db.select().from(orders).where(and(
+      eq(orders.id, input.orderId),
+      eq(orders.deviceId, session.deviceId),
+      eq(orders.wallet, input.wallet),
+      inArray(orders.status, ["paid", "promo_redeemed"])
+    )).limit(1);
+    if (!order) return reply.code(404).send({ code: "PAID_ORDER_NOT_FOUND" });
+    const [license] = await db.select().from(licenses).where(and(
+      eq(licenses.orderId, order.id),
+      eq(licenses.deviceId, session.deviceId),
+      eq(licenses.receiptWallet, input.wallet),
+      eq(licenses.status, "active")
+    )).limit(1);
+    if (!license) return reply.code(403).send({ code: "ACTIVE_LICENSE_REQUIRED" });
+    const challengeId = randomUUID();
+    const nonce = randomNonce();
+    const expiresAt = new Date(Date.now() + 5 * 60_000);
+    const message = webInstallerWalletChallengeMessage({
+      domain: new URL(config.publicWebUrl).host,
+      challengeId,
+      sessionId: session.id,
+      deviceId: session.deviceId,
+      orderId: order.id,
+      licenseId: license.id,
+      wallet: input.wallet,
+      nonce,
+      expiresAt: expiresAt.toISOString()
+    });
+    await db.insert(walletChallenges).values({
+      id: challengeId,
+      sessionId: session.id,
+      wallet: input.wallet,
+      purpose: "web_installer",
+      orderId: order.id,
+      licenseId: license.id,
+      message,
+      nonce,
+      expiresAt
+    });
+    return reply.code(201).send({ challengeId, message, expiresAt: expiresAt.toISOString() });
+  });
+
+  app.post("/v1/web/wizard/verify", async (request, reply) => {
+    const auth = await requireToken(request, tokens, "browser-checkout");
+    const input = webInstallerVerifySchema.parse(request.body);
+    const [challenge] = await db.select().from(walletChallenges).where(and(
+      eq(walletChallenges.id, input.challengeId),
+      eq(walletChallenges.purpose, "web_installer"),
+      gt(walletChallenges.expiresAt, new Date()),
+      isNull(walletChallenges.consumedAt)
+    )).limit(1);
+    if (!challenge || !challenge.orderId || !challenge.licenseId || auth.sessionId !== challenge.sessionId) {
+      return reply.code(401).send({ code: "CHALLENGE_INVALID" });
+    }
+    const session = await activeSession(db, challenge.sessionId);
+    if (!session || session.channel !== "web" || auth.sub !== session.pairingPublicKey) {
+      return reply.code(403).send({ code: "WEB_PAIRING_REQUIRED" });
+    }
+    if (!verifyEd25519Base58({ publicKey: challenge.wallet, signature: input.signature, message: challenge.message })) {
+      return reply.code(401).send({ code: "WALLET_SIGNATURE_INVALID" });
+    }
+    const [license] = await db.select().from(licenses).where(and(
+      eq(licenses.id, challenge.licenseId),
+      eq(licenses.orderId, challenge.orderId),
+      eq(licenses.deviceId, session.deviceId),
+      eq(licenses.receiptWallet, challenge.wallet),
+      eq(licenses.status, "active")
+    )).limit(1);
+    const [order] = await db.select().from(orders).where(and(
+      eq(orders.id, challenge.orderId),
+      eq(orders.wallet, challenge.wallet),
+      inArray(orders.status, ["paid", "promo_redeemed"])
+    )).limit(1);
+    if (!license || !order) return reply.code(403).send({ code: "ACTIVE_LICENSE_REQUIRED" });
+    const consumed = await db.update(walletChallenges).set({ consumedAt: new Date() }).where(and(
+      eq(walletChallenges.id, challenge.id),
+      isNull(walletChallenges.consumedAt)
+    )).returning({ id: walletChallenges.id });
+    if (!consumed.length) return reply.code(409).send({ code: "CHALLENGE_ALREADY_USED" });
+    const webInstallerToken = await tokens.issueSessionToken({
+      audience: "web-installer",
+      subject: license.id,
+      sessionId: session.id,
+      deviceId: session.deviceId,
+      wallet: challenge.wallet,
+      expiresIn: "10m"
+    });
+    await audit(db, "web_installer.authorized", { actor: challenge.wallet, subjectId: license.id, payload: { orderId: order.id } });
+    return { webInstallerToken, licenseId: license.id, expiresInSeconds: 600 };
+  });
+
   app.post("/v1/orders", { config: { rateLimit: { max: 5, timeWindow: "1 hour" } } }, async (request, reply) => {
     const auth = await requireToken(request, tokens, "wallet");
     const input = orderCreateSchema.parse(request.body);
@@ -298,7 +469,11 @@ export async function buildApp(dependencies: Dependencies) {
     await enforceDistributedLimit(redis, `orders:device:${session.deviceId}`, 5, 60 * 60);
     await enforceDistributedLimit(redis, `orders:wallet:${String(auth.wallet)}`, 5, 60 * 60);
     const existing = await activeLicenseForDevice(db, session.deviceId);
-    if (existing) return reply.send({ alreadyLicensed: true, licenseId: existing.id });
+    if (existing) return reply.send({
+      alreadyLicensed: true,
+      licenseId: existing.id,
+      ...(existing.receiptWallet === auth.wallet ? { orderId: existing.orderId } : { walletAuthorizationRequired: true })
+    });
 
     const betaInviteDigest = input.betaInviteToken ? sha256(input.betaInviteToken) : null;
     if (betaInviteDigest) await enforceDistributedLimit(redis, `beta-invite:ip:${request.ip}`, 10, 60 * 60);
@@ -532,13 +707,11 @@ export async function buildApp(dependencies: Dependencies) {
   });
 
   app.post("/v1/licenses/:id/installation-started", async (request, reply) => {
-    const token = bearerToken(request.headers.authorization);
-    if (!token) return reply.code(401).send({ code: "LICENSE_REQUIRED" });
-    const auth = await tokens.verifyLicenseToken(token);
+    const auth = await verifyInstallerAccess(request, tokens);
     const id = uuidSchema.parse((request.params as { id: string }).id);
     if (auth.sub !== id) return reply.code(403).send({ code: "LICENSE_MISMATCH" });
     const [current] = await db.select().from(licenses).where(and(eq(licenses.id, id), eq(licenses.status, "active"))).limit(1);
-    if (!current) return reply.code(404).send({ code: "LICENSE_NOT_FOUND" });
+    if (!current || auth.deviceId !== current.deviceId) return reply.code(404).send({ code: "LICENSE_NOT_FOUND" });
     if (current.modificationStartedAt) return { modificationStartedAt: current.modificationStartedAt.toISOString() };
     const result = await db.update(licenses).set({ modificationStartedAt: new Date() }).where(and(eq(licenses.id, id), eq(licenses.status, "active"), isNull(licenses.modificationStartedAt))).returning();
     if (!result.length) return reply.code(409).send({ code: "INSTALLATION_BOUNDARY_RACE" });
@@ -590,9 +763,7 @@ export async function buildApp(dependencies: Dependencies) {
   });
 
   app.get("/v1/releases/stable", async (request, reply) => {
-    const token = bearerToken(request.headers.authorization);
-    if (!token) return reply.code(401).send({ code: "LICENSE_REQUIRED" });
-    const auth = await tokens.verifyLicenseToken(token);
+    const auth = await verifyInstallerAccess(request, tokens);
     const license = await activeLicenseForDevice(db, String(auth.deviceId));
     if (!license || license.id !== auth.sub) return reply.code(403).send({ code: "LICENSE_INACTIVE" });
     const [device] = await db.select().from(devices).where(eq(devices.id, license.deviceId)).limit(1);
@@ -675,10 +846,24 @@ export async function buildApp(dependencies: Dependencies) {
   return app;
 }
 
-async function requireToken(request: FastifyRequest, tokens: TokenService, audience: "desktop-session" | "checkout" | "browser-checkout" | "wallet") {
+async function requireToken(request: FastifyRequest, tokens: TokenService, audience: "desktop-session" | "checkout" | "browser-checkout" | "wallet" | "web-installer") {
   const token = bearerToken(request.headers.authorization);
   if (!token) throw Object.assign(new Error("Authorization required"), { statusCode: 401 });
   return tokens.verifySessionToken(token, audience);
+}
+
+async function verifyInstallerAccess(request: FastifyRequest, tokens: TokenService) {
+  const token = bearerToken(request.headers.authorization);
+  if (!token) throw Object.assign(new Error("License authorization required"), { statusCode: 401, code: "LICENSE_REQUIRED" });
+  try {
+    return await tokens.verifyLicenseToken(token);
+  } catch {
+    try {
+      return await tokens.verifySessionToken(token, "web-installer");
+    } catch {
+      throw Object.assign(new Error("Installer authorization is invalid or expired"), { statusCode: 401, code: "INSTALLER_AUTH_INVALID" });
+    }
+  }
 }
 
 async function activeSession(db: Database, id: string) {

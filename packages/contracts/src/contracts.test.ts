@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { BETA_PROMO_CODE, TREASURY_WALLET, browserProofMessage, compatibilityProfileSchema, deviceIdSchema, entitlementRecoverySchema, firmwareArtifactSchema, orderCreateSchema, releaseManifestSchema, sessionCreateSchema, sessionProofMessage } from "./index";
+import { BETA_PROMO_CODE, TREASURY_WALLET, browserProofMessage, compatibilityProfileSchema, deviceIdSchema, entitlementRecoverySchema, firmwareArtifactSchema, orderCreateSchema, releaseManifestSchema, sessionCreateSchema, sessionProofMessage, webCheckoutWalletChallengeMessage, webInstallerWalletChallengeMessage, webSessionCreateSchema, webSessionProofMessage } from "./index";
 
 describe("public contracts", () => {
   it("accepts a SHA-256 device id", () => {
@@ -52,6 +52,48 @@ describe("public contracts", () => {
     });
     expect(message).toContain(`request-nonce:${"n".repeat(32)}`);
     expect(message).toContain("created-at:2026-01-01T00:00:00.000Z");
+  });
+
+  it("models web pairing as a separate signed channel", () => {
+    const input = {
+      deviceId: "d".repeat(64), pairingPublicKey: "11111111111111111111111111111111",
+      pairingProof: "a".repeat(64), appVersion: "0.2.0", requestNonce: "n".repeat(32),
+      createdAt: "2026-01-01T00:00:00.000Z", hostOs: "web" as const,
+      compatibility: {
+        product: "PSG1", model: "PSG1", board: "V11", hardware: "RK3588S",
+        buildFingerprint: "test", buildIncremental: "test", androidApiLevel: 35,
+        vendorApiLevel: 35, batteryPercent: 100, charging: true, serialVerified: true,
+        usbStable: true, recoveryCapable: true, hostBytesAvailable: 8_000_000_000,
+        systemPartitionBytes: 4_000_000_000
+      }
+    };
+    expect(webSessionCreateSchema.parse(input).hostOs).toBe("web");
+    expect(sessionCreateSchema.safeParse(input).success).toBe(false);
+    expect(webSessionProofMessage(input)).toContain("Revive PSG1 web pairing");
+  });
+
+  it("purpose-binds web installer authorization to the paid order and active license", () => {
+    const message = webInstallerWalletChallengeMessage({
+      domain: "revivepsg.com", challengeId: "challenge", sessionId: "session", deviceId: "d".repeat(64),
+      orderId: "order", licenseId: "license", wallet: TREASURY_WALLET, nonce: "nonce", expiresAt: "2026-01-01T00:00:00.000Z"
+    });
+    expect(message).toContain("purpose:web-installer");
+    expect(message).toContain("order:order");
+    expect(message).toContain("license:license");
+    expect(message).not.toBe(browserProofMessage({
+      domain: "revivepsg.com", challengeId: "challenge", sessionId: "session", deviceId: "d".repeat(64),
+      pairingPublicKey: "pairing", browserNonceHash: "b".repeat(64), nonce: "nonce", expiresAt: "2026-01-01T00:00:00.000Z"
+    }));
+  });
+
+  it("identifies web checkout authorization without claiming a desktop pairing", () => {
+    const message = webCheckoutWalletChallengeMessage({
+      domain: "revivepsg.com", challengeId: "challenge", sessionId: "session", deviceId: "d".repeat(64),
+      pairingPublicKey: "pairing", wallet: TREASURY_WALLET, nonce: "nonce", expiresAt: "2026-01-01T00:00:00.000Z"
+    });
+    expect(message).toContain("channel:web");
+    expect(message).toContain("web-pairing-key:pairing");
+    expect(message).not.toContain("desktop-key:");
   });
 
   it("models Google components only as pinned customer-supplied input", () => {

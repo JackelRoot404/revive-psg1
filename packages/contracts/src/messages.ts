@@ -15,6 +15,24 @@ export function sessionProofMessage(input: {
   ].join("\n");
 }
 
+export function webSessionProofMessage(input: {
+  deviceId: string;
+  pairingPublicKey: string;
+  appVersion: string;
+  requestNonce: string;
+  createdAt: string;
+}): string {
+  return [
+    "Revive PSG1 web pairing",
+    `device:${input.deviceId}`,
+    `pairing-key:${input.pairingPublicKey}`,
+    `app-version:${input.appVersion}`,
+    `request-nonce:${input.requestNonce}`,
+    `created-at:${input.createdAt}`,
+    "This key authorizes only this browser session and is not a wallet signature."
+  ].join("\n");
+}
+
 export function walletChallengeMessage(input: {
   domain: string;
   challengeId: string;
@@ -32,6 +50,58 @@ export function walletChallengeMessage(input: {
     `session:${input.sessionId}`,
     `device:${input.deviceId}`,
     `desktop-key:${input.pairingPublicKey}`,
+    `wallet:${input.wallet}`,
+    `nonce:${input.nonce}`,
+    `expires:${input.expiresAt}`,
+    "This signature does not authorize a blockchain transaction."
+  ].join("\n");
+}
+
+export function webCheckoutWalletChallengeMessage(input: {
+  domain: string;
+  challengeId: string;
+  sessionId: string;
+  deviceId: string;
+  pairingPublicKey: string;
+  wallet: string;
+  nonce: string;
+  expiresAt: string;
+}): string {
+  return [
+    "Revive PSG1 checkout authorization",
+    "channel:web",
+    `domain:${input.domain}`,
+    `challenge:${input.challengeId}`,
+    `session:${input.sessionId}`,
+    `device:${input.deviceId}`,
+    `web-pairing-key:${input.pairingPublicKey}`,
+    `wallet:${input.wallet}`,
+    `nonce:${input.nonce}`,
+    `expires:${input.expiresAt}`,
+    "This signature does not authorize a blockchain transaction."
+  ].join("\n");
+}
+
+export function webInstallerWalletChallengeMessage(input: {
+  domain: string;
+  challengeId: string;
+  sessionId: string;
+  deviceId: string;
+  orderId: string;
+  licenseId: string;
+  wallet: string;
+  nonce: string;
+  expiresAt: string;
+}): string {
+  return [
+    "Revive PSG1 web installer authorization",
+    "purpose:web-installer",
+    `domain:${input.domain}`,
+    `challenge:${input.challengeId}`,
+    `session:${input.sessionId}`,
+    `device:${input.deviceId}`,
+    `order:${input.orderId}`,
+    `license:${input.licenseId}`,
     `wallet:${input.wallet}`,
     `nonce:${input.nonce}`,
     `expires:${input.expiresAt}`,
