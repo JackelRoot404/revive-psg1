@@ -49,7 +49,7 @@ export function DonationBanner() {
       <div className="donation-copy">
         <span className="donation-kicker">COMMUNITY-SUPPORTED · FREE FOREVER</span>
         <h2 id="donation-title">❤️ Free forever</h2>
-        <p>Revive PSG1 is free forever.</p>
+        <p>Revive PSG1 is free forever—no payment, wallet, or license required.</p>
         <p>If this project saved your console—or you simply want to support future development—please consider donating. Every donation directly funds new features, bug fixes, compatibility improvements, and long-term maintenance.</p>
         <div className="donation-wallet"><span>Solana wallet</span><code>{TREASURY_WALLET}</code></div>
         <div className="donation-actions">
