@@ -6,6 +6,8 @@
   NODE_VERSION = "22"
   NETLIFY_NEXT_SKEW_PROTECTION = "true"
   EARLY_ACCESS_FREE = "true"
+  NEXT_PUBLIC_COMPATIBILITY_CHECKER_ONLY = "true"
+  NEXT_PUBLIC_SALES_STATE = "closed"
 
 [[headers]]
   for = "/*"

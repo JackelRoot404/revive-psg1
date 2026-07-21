@@ -97,4 +97,13 @@ REVIVE_OFFLINE_SIGNING_KEY_PEM="$(security find-generic-password -w -s revive-re
   > psg1-rk3588s-v11-api35-v1.signed.json
 ```
 
-The checked-in profile is only a source template. Its firmware pattern must be widened only after read-only partition, bootloader, vendor, serial-uniqueness, controls, Wi-Fi, audio, storage, fingerprint, and restoration validation.
+The checked-in profile is only a source template. The current `playsolana/.*/PSG1:15/.*` pattern is intentionally broad for the public read-only compatibility checker; it does not by itself certify that every matching build is safe to unlock or flash. Narrow or split profiles only after read-only partition, bootloader, vendor, serial-uniqueness, controls, Wi-Fi, audio, storage, fingerprint, and restoration validation.
+
+Insert or refresh a signed profile in PostgreSQL with:
+
+```bash
+DATABASE_URL='postgresql://revive:revive@localhost:5432/revive_psg1' \
+  node tools/insert-compatibility-profile.mjs ~/revive-signing/psg1-rk3588s-v11-api35-v1.signed.json
+```
+
+Production cutover steps: [compatibility-checker-cutover.md](docs/compatibility-checker-cutover.md).

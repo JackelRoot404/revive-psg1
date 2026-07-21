@@ -3,6 +3,7 @@ import Link from "next/link";
 import "./globals.css";
 import "./states.css";
 import { legalConfig } from "../lib/public-config";
+import { isCompatibilityCheckerOnly } from "../lib/server-config";
 
 export const metadata: Metadata = {
   title: { default: "Revive PSG1", template: "%s · Revive PSG1" },
@@ -17,12 +18,13 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const compatibilityCheckerOnly = isCompatibilityCheckerOnly();
   return (
     <html lang="en">
       <body>
         <header className="site-header">
           <Link className="brand" href="/"><span className="brand-mark">R</span> Revive PSG1</Link>
-          <nav aria-label="Primary"><Link href="/wizard">Start Unlocking</Link><Link href="/docs">How it works</Link><Link href="/license">Early Access</Link></nav>
+          <nav aria-label="Primary"><Link href="/wizard">{compatibilityCheckerOnly ? "Check compatibility" : "Start Unlocking"}</Link><Link href="/docs">How it works</Link><Link href="/license">Early Access</Link></nav>
         </header>
         {children}
         <footer><span>Independent PSG1 recovery tooling by biccsdev. Not affiliated with PlaySolana or Google.</span><nav><a href={legalConfig.supportUrl}>Support</a><Link href="/license">Early Access</Link><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></nav></footer>

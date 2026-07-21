@@ -1,19 +1,22 @@
 import Link from "next/link";
 import { DonationBanner } from "./donation-banner";
-import { isEarlyAccessFree } from "../lib/server-config";
+import { isCompatibilityCheckerOnly, isEarlyAccessFree } from "../lib/server-config";
 
 const capabilities = ["Physical controls", "Wi-Fi & audio", "Aurora Store", "F-Droid", "RetroArch", "Optional local GMS validation"];
 
 export default function Home() {
   const earlyAccessFree = isEarlyAccessFree();
+  const compatibilityCheckerOnly = isCompatibilityCheckerOnly();
   return <main>
     {earlyAccessFree && <DonationBanner />}
     <section className="hero">
-      <div className="eyebrow"><span className="pulse" /> SELF-SERVICE WEB INSTALLER</div>
+      <div className="eyebrow"><span className="pulse" /> {compatibilityCheckerOnly ? "PUBLIC COMPATIBILITY CHECKER" : "SELF-SERVICE WEB INSTALLER"}</div>
       <h1>Revive your <em>PSG1.</em></h1>
-      <p className="hero-copy">Convert your unused PSG1 into a general-purpose Android gaming handheld—with working physical controls and a careful, recoverable install flow.</p>
-      <div className="hero-actions"><Link className="button primary" href="/wizard">{earlyAccessFree ? "Start Unlocking — Free" : "Get Started"}</Link><Link className="button ghost" href="/docs">See the process</Link></div>
-      <div className="trust-row"><span>✓ Free compatibility scan</span><span>✓ {earlyAccessFree ? "No purchase required" : "One device, one license"}</span><span>✓ Released updates included</span></div>
+      <p className="hero-copy">{compatibilityCheckerOnly
+        ? "Connect your PSG1 over USB and run a free read-only scan to see whether your firmware matches a signed Revive profile. Browser unlock and flashing are not public yet."
+        : "Convert your unused PSG1 into a general-purpose Android gaming handheld—with working physical controls and a careful, recoverable install flow."}</p>
+      <div className="hero-actions"><Link className="button primary" href="/wizard">{compatibilityCheckerOnly ? "Check compatibility" : earlyAccessFree ? "Start Unlocking — Free" : "Get Started"}</Link><Link className="button ghost" href="/docs">See the process</Link></div>
+      <div className="trust-row"><span>✓ Free compatibility scan</span><span>✓ {compatibilityCheckerOnly ? "No device changes" : earlyAccessFree ? "No purchase required" : "One device, one license"}</span><span>✓ {compatibilityCheckerOnly ? "Read-only USB check" : "Released updates included"}</span></div>
       <div className="device-card" aria-label="Revive installation preview">
         <div className="device-screen">
           <span className="screen-kicker">REVIVE / READY</span><strong>PSG1 detected</strong>
@@ -34,11 +37,11 @@ export default function Home() {
     </section>
 
     <section className="section steps">
-      <span className="section-label">THREE CONTROLLED STAGES</span>
+      <span className="section-label">{compatibilityCheckerOnly ? "TODAY" : "THREE CONTROLLED STAGES"}</span>
       <div className="step-grid">
         <article><b>01</b><h3>Scan</h3><p>Open desktop Chrome or Edge and connect over USB. Revive checks serial consistency, firmware, battery, storage, and recovery support—free.</p></article>
-        <article><b>02</b><h3>{earlyAccessFree ? "Free access" : "License"}</h3><p>{earlyAccessFree ? "Activate Early Access instantly—no wallet, payment, or promo code required. Access remains bound to your PSG1." : "Complete the secure checkout. The permanent entitlement binds to your PSG1, not the wallet."}</p></article>
-        <article><b>03</b><h3>Revive</h3><p>Follow the guided unlock and install. Every artifact is signed and verified before the device is modified.</p></article>
+        <article><b>02</b><h3>{compatibilityCheckerOnly ? "Result" : earlyAccessFree ? "Free access" : "License"}</h3><p>{compatibilityCheckerOnly ? "See whether your PSG1 matches the signed profile. Nothing is activated, bound, unlocked, wiped, or flashed." : earlyAccessFree ? "Activate Early Access instantly—no wallet, payment, or promo code required. Access remains bound to your PSG1." : "Complete the secure checkout. The permanent entitlement binds to your PSG1, not the wallet."}</p></article>
+        <article><b>03</b><h3>{compatibilityCheckerOnly ? "Coming later" : "Revive"}</h3><p>{compatibilityCheckerOnly ? "Browser unlock and flashing will open after the remaining safety cohort is complete. Follow Discord for availability." : "Follow the guided unlock and install. Every artifact is signed and verified before the device is modified."}</p></article>
       </div>
     </section>
 

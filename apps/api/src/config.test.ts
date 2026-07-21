@@ -51,6 +51,11 @@ describe("local configuration", () => {
     expect(loadConfig({ NODE_ENV: "development", REVIVE_DEV_HARDWARE_FIXTURE: "true" }).developmentHardwareFixture).toBe(true);
   });
 
+  it("defaults compatibility checker only mode to enabled", () => {
+    expect(loadConfig({ NODE_ENV: "development" }).compatibilityCheckerOnly).toBe(true);
+    expect(loadConfig({ NODE_ENV: "development", COMPATIBILITY_CHECKER_ONLY: "false" }).compatibilityCheckerOnly).toBe(false);
+  });
+
   it("refuses the deterministic hardware fixture in production", () => {
     expect(() => loadConfig({ ...production, REVIVE_DEV_HARDWARE_FIXTURE: "true" })).toThrow(/forbidden in production/i);
   });

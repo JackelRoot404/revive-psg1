@@ -246,6 +246,7 @@ export async function buildApp(dependencies: Dependencies) {
   });
 
   app.post("/v1/early-access/activate", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
+    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
     const auth = await requireToken(request, tokens, "browser-checkout");
     const input = earlyAccessActivateSchema.parse(request.body);
     if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
@@ -473,6 +474,7 @@ export async function buildApp(dependencies: Dependencies) {
   });
 
   app.post("/v1/web/wizard/challenge", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
     const auth = await requireToken(request, tokens, "browser-checkout");
     const input = webInstallerChallengeRequestSchema.parse(request.body);
     if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
@@ -523,6 +525,7 @@ export async function buildApp(dependencies: Dependencies) {
   });
 
   app.post("/v1/web/wizard/verify", async (request, reply) => {
+    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
     const auth = await requireToken(request, tokens, "browser-checkout");
     const input = webInstallerVerifySchema.parse(request.body);
     const [challenge] = await db.select().from(walletChallenges).where(and(
@@ -818,6 +821,7 @@ export async function buildApp(dependencies: Dependencies) {
   });
 
   app.post("/v1/licenses/:id/installation-started", async (request, reply) => {
+    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
     const auth = await verifyInstallerAccess(request, tokens);
     const id = uuidSchema.parse((request.params as { id: string }).id);
     if (auth.sub !== id) return reply.code(403).send({ code: "LICENSE_MISMATCH" });
@@ -884,6 +888,7 @@ export async function buildApp(dependencies: Dependencies) {
   });
 
   app.get("/v1/releases/stable", async (request, reply) => {
+    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
     const auth = await verifyInstallerAccess(request, tokens);
     const license = await activeLicenseForDevice(db, String(auth.deviceId));
     if (!license || license.id !== auth.sub) return reply.code(403).send({ code: "LICENSE_INACTIVE" });
@@ -1080,6 +1085,10 @@ async function publicSaleReady(db: Database): Promise<boolean> {
     count: sql<number>`count(*)::int`
   }).from(promoRedemptions).where(eq(promoRedemptions.codeHash, sha256(BETA_PROMO_CODE)));
   return launchGateSetComplete(checks, betaRedemptions);
+}
+
+export function installerBlockedInScanOnlyMode(config: Config): boolean {
+  return config.compatibilityCheckerOnly;
 }
 
 export function launchGateSetComplete(

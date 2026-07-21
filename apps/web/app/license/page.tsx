@@ -1,14 +1,19 @@
 import Link from "next/link";
-import { isEarlyAccessFree } from "../../lib/server-config";
+import { isCompatibilityCheckerOnly, isEarlyAccessFree } from "../../lib/server-config";
 
 export const metadata = { title: "License status" };
 
 export default function LicenseStatus() {
   const earlyAccessFree = isEarlyAccessFree();
+  const compatibilityCheckerOnly = isCompatibilityCheckerOnly();
   return <main className="prose">
-    <span className="section-label">{earlyAccessFree ? "FREE EARLY ACCESS" : "DEVICE-BOUND ACCESS"}</span>
-    <h1>{earlyAccessFree ? "Early Access is free." : "Recover your license."}</h1>
-    {earlyAccessFree ? <>
+    <span className="section-label">{compatibilityCheckerOnly ? "COMPATIBILITY CHECKER" : earlyAccessFree ? "FREE EARLY ACCESS" : "DEVICE-BOUND ACCESS"}</span>
+    <h1>{compatibilityCheckerOnly ? "Check compatibility first." : earlyAccessFree ? "Early Access is free." : "Recover your license."}</h1>
+    {compatibilityCheckerOnly ? <>
+      <p>The public website currently offers a read-only compatibility scan only. Browser unlock, activation, and flashing are not open yet.</p>
+      <div className="notice"><strong>No purchase, wallet, or activation required.</strong><p>Connect a PSG1, complete the read-only scan, and see whether your firmware matches the signed profile. Nothing is bound, unlocked, wiped, or flashed.</p></div>
+      <p><Link className="button primary inline-button" href="/wizard">Check compatibility</Link></p>
+    </> : earlyAccessFree ? <>
       <p>This project is currently free during Early Access. Donations are optional and greatly appreciated. Paid licensing may return once the project reaches a stable v1.0.</p>
       <div className="notice"><strong>No purchase or wallet required.</strong><p>Connect a supported PSG1, complete the read-only compatibility scan, and activate device-bound access instantly.</p></div>
       <p><Link className="button primary inline-button" href="/wizard">Start Unlocking — Free</Link></p>
