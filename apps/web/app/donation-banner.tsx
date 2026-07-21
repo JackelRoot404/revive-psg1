@@ -47,9 +47,9 @@ export function DonationBanner() {
   return <section className="donation-banner" aria-labelledby="donation-title">
     <div className="donation-inner">
       <div className="donation-copy">
-        <span className="donation-kicker">COMMUNITY-SUPPORTED EARLY ACCESS</span>
-        <h2 id="donation-title">❤️ Early Access is FREE</h2>
-        <p>Revive PSG1 is currently available at no cost while the project matures.</p>
+        <span className="donation-kicker">COMMUNITY-SUPPORTED · FREE FOREVER</span>
+        <h2 id="donation-title">❤️ Free forever</h2>
+        <p>Revive PSG1 is free forever.</p>
         <p>If this project saved your console—or you simply want to support future development—please consider donating. Every donation directly funds new features, bug fixes, compatibility improvements, and long-term maintenance.</p>
         <div className="donation-wallet"><span>Solana wallet</span><code>{TREASURY_WALLET}</code></div>
         <div className="donation-actions">
