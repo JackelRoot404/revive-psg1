@@ -8,6 +8,7 @@ COPY tsconfig.base.json ./
 COPY packages/contracts packages/contracts
 COPY apps/api apps/api
 RUN npm run build -w @revive-psg1/api
+RUN node -e "const fs=require('fs');const path=require('path');const fix=(d)=>{for(const f of fs.readdirSync(d)){const p=path.join(d,f);if(fs.statSync(p).isDirectory())fix(p);else if(p.endsWith('.js')){let s=fs.readFileSync(p,'utf8');s=s.replace(/from \\\"(\\.\\.?\\/[^\\\"]+)\\\"/g,(m,i)=>i.endsWith('.js')||i.startsWith('@')?m:'from \\\"'+i+'.js\\\"');fs.writeFileSync(p,s);}}};fix('apps/api/dist');"
 
 FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production
