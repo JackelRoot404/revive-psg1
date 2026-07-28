@@ -1,6 +1,7 @@
 import { Adb, AdbDaemonTransport } from "@yume-chan/adb";
 import AdbWebCredentialStore from "@yume-chan/adb-credential-web";
 import { AdbDaemonWebUsbDeviceManager } from "@yume-chan/adb-daemon-webusb";
+import { createAndroidSparseSegments } from "./android-sparse";
 
 export const ROCKCHIP_VENDOR_ID = 0x2207;
 export const FASTBOOT_INTERFACE = Object.freeze({ classCode: 0xff, subclassCode: 0x42, protocolCode: 0x03 });
@@ -221,6 +222,19 @@ export class WebFastbootPsg1 {
   async flash(partition: "vbmeta" | "system", payload: Blob): Promise<void> {
     await this.download(payload);
     await this.command(`flash:${partition}`);
+  }
+
+  /** Flash a verified raw ext4 system image through Fastbootd's download window. */
+  async flashSparseSystem(image: Blob, onProgress?: (completed: number, total: number) => void): Promise<void> {
+    const limit = await this.maxDownloadSize();
+    const segments = await createAndroidSparseSegments(image, limit);
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      if (!segment) throw new Error("Android sparse segment plan is incomplete.");
+      await this.download(segment);
+      await this.command("flash:system");
+      onProgress?.(index + 1, segments.length);
+    }
   }
 
   async resizeLogicalSystem(size: number): Promise<void> {
