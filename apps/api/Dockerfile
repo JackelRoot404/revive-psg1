@@ -19,6 +19,7 @@ COPY packages/contracts/package.json packages/contracts/package.json
 RUN npm ci --omit=dev
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY --from=build /app/packages/contracts/dist packages/contracts/dist
+COPY --from=build /app/apps/api/drizzle apps/api/drizzle
 USER node
 EXPOSE 8080
 CMD ["node", "apps/api/dist/server.js"]

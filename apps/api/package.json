@@ -11,6 +11,7 @@
     "test": "npm run build -w @revive-psg1/contracts && vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate:runtime": "node dist/migrate.js",
     "db:seed": "tsx src/db/seed.ts",
     "db:beta-invite": "tsx src/db/create-beta-invite.ts"
   },
