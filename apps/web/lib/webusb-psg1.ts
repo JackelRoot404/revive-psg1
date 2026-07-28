@@ -156,9 +156,9 @@ export class WebAdbPsg1 {
   }
 
   /** Upload, install, and inspect one release APK through a fixed ADB path. */
-  async installVerifiedApk(apk: Blob, expected: { packageName: string; versionName: string; signerSha256: string }): Promise<void> {
+  async installVerifiedApk(apk: Blob, expected: { packageName: string; versionName?: string; signerSha256: string }): Promise<void> {
     if (!/^[a-z][a-z0-9_.]{2,150}$/u.test(expected.packageName)
-      || !expected.versionName.trim()
+      || (expected.versionName !== undefined && !expected.versionName.trim())
       || !/^[a-f0-9]{64}$/u.test(expected.signerSha256)) {
       throw new Error("The signed APK metadata is invalid.");
     }
@@ -170,7 +170,7 @@ export class WebAdbPsg1 {
       const result = await this.adb.subprocess.noneProtocol.spawnWaitText(["pm", "install", "-r", "--user", "0", remotePath]);
       if (!/^Success\b/mu.test(result)) throw new Error(`Android did not install ${expected.packageName}.`);
       const details = await this.adb.subprocess.noneProtocol.spawnWaitText(["dumpsys", "package", expected.packageName]);
-      if (!new RegExp(`\\bversionName=${escapeRegex(expected.versionName)}\\b`, "u").test(details)) {
+      if (expected.versionName && !new RegExp(`\\bversionName=${escapeRegex(expected.versionName)}\\b`, "u").test(details)) {
         throw new Error(`${expected.packageName} has an unexpected installed version.`);
       }
       if (!new RegExp(`SHA256:\\s*${expected.signerSha256}`, "iu").test(details)) {

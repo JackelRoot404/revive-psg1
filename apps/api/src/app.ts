@@ -9,6 +9,7 @@ import {
   BETA_PROMO_CODE,
   BETA_PROMO_LIMIT,
   betaActivateSchema,
+  betaResumeSchema,
   DEVELOPMENT_FIXTURE_DEVICE_ID,
   DEVELOPMENT_FIXTURE_PROFILE_ID,
   DEVELOPMENT_MODIFIED_PROFILE_ID,
@@ -343,7 +344,7 @@ export async function buildApp(dependencies: Dependencies) {
   // to the first supported physical PSG1 that redeems it inside this single
   // transaction, and can never be used again.
   app.post("/v1/beta/activate", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
-    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "BETA_INSTALLER_CLOSED" });
+    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
     const auth = await requireToken(request, tokens, "browser-checkout");
     const input = betaActivateSchema.parse(request.body);
     if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
@@ -409,6 +410,29 @@ export async function buildApp(dependencies: Dependencies) {
     });
     await audit(db, created ? "beta.activated" : "beta.resumed", { actor: session.deviceId, subjectId: license.id, payload: { orderId: license.orderId } });
     return reply.code(created ? 201 : 200).send({ licenseId: license.id, orderId: license.orderId, webInstallerToken, expiresInSeconds: 7200 });
+  });
+
+  // A device-bound beta entitlement may be resumed after a reload or USB
+  // interruption without reusing the Discord code. The fresh browser session
+  // still proves possession of the same cross-checked hardware identifier.
+  app.post("/v1/beta/resume", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
+    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
+    const auth = await requireToken(request, tokens, "browser-checkout");
+    const input = betaResumeSchema.parse(request.body);
+    if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
+    const session = await activeSession(db, input.sessionId);
+    if (!session?.supported || session.channel !== "web" || auth.sub !== session.pairingPublicKey) {
+      return reply.code(403).send({ code: "WEB_PAIRING_REQUIRED" });
+    }
+    const license = await activeLicenseForDevice(db, session.deviceId);
+    if (!license) return reply.code(404).send({ code: "BETA_ENTITLEMENT_NOT_FOUND" });
+    const [order] = await db.select({ kind: orders.kind, betaInviteTokenDigest: orders.betaInviteTokenDigest }).from(orders).where(eq(orders.id, license.orderId)).limit(1);
+    if (order?.kind !== "early_access" || !order.betaInviteTokenDigest) return reply.code(404).send({ code: "BETA_ENTITLEMENT_NOT_FOUND" });
+    const webInstallerToken = await tokens.issueSessionToken({
+      audience: "web-installer", subject: license.id, sessionId: session.id, deviceId: session.deviceId, expiresIn: "2h"
+    });
+    await audit(db, "beta.resumed", { actor: session.deviceId, subjectId: license.id, payload: { orderId: license.orderId, source: "resume" } });
+    return { licenseId: license.id, webInstallerToken, expiresInSeconds: 7200 };
   });
 
   app.post("/v1/sessions/:id/browser-proof/challenge", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {

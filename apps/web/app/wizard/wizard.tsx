@@ -9,7 +9,8 @@ import {
 import bs58 from "bs58";
 import nacl from "tweetnacl";
 import { apiUrl } from "../../lib/public-config";
-import { assertArtifactCapacity, downloadVerifiedArtifact, type DownloadArtifact } from "../../lib/artifact-cache";
+import { assertArtifactCapacity, downloadVerifiedArtifact, loadInstallationJournal, type DownloadArtifact } from "../../lib/artifact-cache";
+import { BrowserInstaller, type BrowserInstallArtifact, type BrowserInstallStep } from "../../lib/browser-installer";
 import { verifySignedReleaseDocument } from "../../lib/signed-release";
 import { finalizeWebScan, WebAdbPsg1, WebFastbootPsg1, type WebCompatibilityScan } from "../../lib/webusb-psg1";
 
@@ -22,6 +23,7 @@ type AdbCompatibilityScan = Awaited<ReturnType<WebAdbPsg1["readCompatibility"]>>
 type Session = { sessionId: string; supported: boolean; browserToken: string; profileId: string | null; expiresAt: string; installationState: WebCompatibilityScan["installationState"] };
 type ReleaseArtifact = DownloadArtifact & { kind: "system" | "vbmeta" | "apk" | "recovery"; component: "android_system" | "verified_boot" | "diagnostics" | "diagnostics_test" | "aurora_store" | "retroarch"; delivery: "private"; signerSha256?: string; packageName?: string; versionName?: string };
 type Release = { manifest?: { version?: string; artifacts?: ReleaseArtifact[] }; signature?: string; profile?: { id?: string }; profileSignature?: string; downloadUrls?: Record<string, string> };
+type InstallUiStep = "start" | BrowserInstallStep;
 
 export function Wizard({ developmentHardwareFixture, compatibilityCheckerOnly, betaBrowserInstaller, destructiveBrowserFlashingValidated }: { developmentHardwareFixture: boolean; compatibilityCheckerOnly: boolean; betaBrowserInstaller: boolean; destructiveBrowserFlashingValidated: boolean }) {
   const [stage, setStage] = useState<Stage>("intro");
@@ -36,6 +38,8 @@ export function Wizard({ developmentHardwareFixture, compatibilityCheckerOnly, b
   const [artifactsReady, setArtifactsReady] = useState(false);
   const [riskAccepted, setRiskAccepted] = useState(false);
   const [confirmation, setConfirmation] = useState("");
+  const [installStep, setInstallStep] = useState<InstallUiStep>("start");
+  const [installStatus, setInstallStatus] = useState("");
   const [error, setError] = useState("");
   const browserReady = useSyncExternalStore(subscribeBrowserCapability, browserCapabilitySnapshot, () => false);
   const betaOpen = betaBrowserInstaller && !compatibilityCheckerOnly;
@@ -101,20 +105,65 @@ export function Wizard({ developmentHardwareFixture, compatibilityCheckerOnly, b
       }
       await verifySignedReleaseDocument(authorizedRelease.manifest, authorizedRelease.signature);
       await verifySignedReleaseDocument(authorizedRelease.profile, authorizedRelease.profileSignature);
-      setLicenseId(access.licenseId); setInstallerToken(access.webInstallerToken); setRelease(authorizedRelease); setBetaCode(""); setStage("ready");
+      const resumableStep = await matchingJournalStep(authorizedRelease, scan);
+      setLicenseId(access.licenseId); setInstallerToken(access.webInstallerToken); setRelease(authorizedRelease); setBetaCode("");
+      if (resumableStep) { setInstallStep(resumableStep); setInstallStatus("Recovered the verified local installation journal."); setStage("install"); }
+      else setStage("ready");
+    } catch (cause) { setError(messageOf(cause)); setStage("betaCode"); }
+  }
+
+  async function resumeBetaInstallation() {
+    if (!session) return;
+    setError(""); setStage("activating");
+    try {
+      const access = await request<{ licenseId: string; webInstallerToken: string }>("POST", "/v1/beta/resume", session.browserToken, { sessionId: session.sessionId });
+      const authorizedRelease = await request<Release>("GET", "/v1/releases/stable", access.webInstallerToken);
+      if (!authorizedRelease.manifest || !authorizedRelease.signature || !authorizedRelease.profile || !authorizedRelease.profileSignature) {
+        throw new Error("The beta release response is incomplete.");
+      }
+      await verifySignedReleaseDocument(authorizedRelease.manifest, authorizedRelease.signature);
+      await verifySignedReleaseDocument(authorizedRelease.profile, authorizedRelease.profileSignature);
+      const resumableStep = await matchingJournalStep(authorizedRelease, scan);
+      setLicenseId(access.licenseId); setInstallerToken(access.webInstallerToken); setRelease(authorizedRelease);
+      if (resumableStep) { setInstallStep(resumableStep); setInstallStatus("Recovered the verified local installation journal."); setStage("install"); }
+      else setStage("ready");
     } catch (cause) { setError(messageOf(cause)); setStage("betaCode"); }
   }
 
   async function reviewInstallationReadiness() {
     if (!licenseId || !installerToken || !artifactsReady || confirmation !== "ERASE PSG1" || !riskAccepted) return;
-    setError(""); setStage("install");
+    setError("");
     try {
       await request("POST", `/v1/licenses/${licenseId}/installation-started`, installerToken, {
         termsVersion: "browser-beta-1", irreversibleRiskAcknowledged: true, confirmation: "ERASE PSG1"
       });
+      setInstallStep("start"); setStage("install");
     } catch (cause) {
       setError(messageOf(cause)); setStage("risk");
     }
+  }
+
+  async function continueInstallation() {
+    if (!destructiveBrowserFlashingValidated || !scan || !release?.manifest?.artifacts || !release.manifest.version || !release.profile?.id) return;
+    setError("");
+    try {
+      const installer = new BrowserInstaller({
+        scan, profileId: release.profile.id, releaseVersion: release.manifest.version,
+        artifacts: requiredBetaArtifacts(release.manifest.artifacts) as BrowserInstallArtifact[]
+      });
+      setInstallStatus(installStep === "start" ? "Requesting Android access…" : "Checking the selected PSG1 and continuing the signed installation…");
+      const next = installStep === "start" ? await installer.begin()
+        : installStep === "awaiting_bootloader_unlock" ? await installer.unlock()
+          : installStep === "awaiting_unlocked_android" ? await installer.rebootForVbmeta()
+            : installStep === "awaiting_vbmeta_bootloader" ? await installer.flashVbmeta()
+              : installStep === "awaiting_system_android" ? await installer.rebootForFastbootd()
+                : installStep === "awaiting_fastbootd_system" ? await installer.flashSystem()
+                  : installStep === "awaiting_postflash_android" ? await installer.installAppsAndReboot()
+                    : installStep === "awaiting_first_cold_boot" ? await installer.firstColdBoot()
+                      : installStep === "awaiting_second_cold_boot" ? await installer.finishAfterSecondColdBoot()
+                        : "complete";
+      setInstallStep(next); setInstallStatus(next === "complete" ? "Two cold boots and diagnostics passed." : "Step recorded. Follow the connection instruction below.");
+    } catch (cause) { setError(messageOf(cause)); setInstallStatus("Installation paused safely. Reconnect the same PSG1 and retry this step."); }
   }
 
   async function prepareArtifacts() {
@@ -144,12 +193,12 @@ export function Wizard({ developmentHardwareFixture, compatibilityCheckerOnly, b
     {stage === "fastboot" && <Progress title="Cross-checking the immutable PSG1 identity…" />}
     {stage === "session" && <Progress title="Checking the signed compatibility profile…" />}
     {stage === "unsupported" && <div className="blocked"><strong>This PSG1 is not eligible for browser beta installation.</strong><p>It was returned to Android without any modification. Beta access requires a supported, stock locked PSG1 and a Discord-issued code.</p></div>}
-    {stage === "betaCode" && <div className="wizard-step"><Step number={3} title="Redeem beta tester code" /><p>This is a free, supervised beta. Join Discord, open a ticket, and ask for your one-time code. The first compatible PSG1 that redeems it becomes its permanent beta device.</p><a className="button ghost wide" href={DISCORD_URL} target="_blank" rel="noreferrer">Join Discord and open a ticket ↗</a><label className="field">One-time beta code<input value={betaCode} onChange={(event) => setBetaCode(event.target.value)} placeholder="rpb_…" autoComplete="off" spellCheck={false} /></label><button className="button primary wide" disabled={!betaCode.trim()} onClick={redeemBetaCode}>Activate free beta access</button><small>Do not share your code. It cannot be moved to another PSG1 after redemption.</small></div>}
+    {stage === "betaCode" && <div className="wizard-step"><Step number={3} title="Redeem beta tester code" /><p>This is a free, supervised beta. Join Discord, open a ticket, and ask for your one-time code. The first compatible PSG1 that redeems it becomes its permanent beta device.</p><a className="button ghost wide" href={DISCORD_URL} target="_blank" rel="noreferrer">Join Discord and open a ticket ↗</a><label className="field">One-time beta code<input value={betaCode} onChange={(event) => setBetaCode(event.target.value)} placeholder="rpb_…" autoComplete="off" spellCheck={false} /></label><button className="button primary wide" disabled={!betaCode.trim()} onClick={redeemBetaCode}>Activate free beta access</button><button className="button ghost wide" onClick={resumeBetaInstallation}>Resume this PSG1&apos;s beta</button><small>Do not share your code. It cannot be moved to another PSG1 after redemption.</small></div>}
     {stage === "activating" && <Progress title="Binding this code to your PSG1 and authorizing the signed beta release…" />}
     {stage === "ready" && <div className="success"><strong>✓ Beta release authorized</strong><p>Release {release?.manifest?.version ?? "authorized"} is signed for this PSG1. Aurora Store and RetroArch are included as verified post-flash APKs.</p><button className="button primary wide" onClick={prepareArtifacts}>Download and verify beta artifacts</button></div>}
     {stage === "preparing" && <Progress title={artifactStatus || "Preparing signed beta artifacts in persistent browser storage…"} />}
     {stage === "risk" && <div className="wizard-step"><Step number={4} title="Irreversible installation" /><div className="warning"><strong>No echOS recovery image is provided.</strong><p>This process erases all data, leaves the bootloader unlocked, may make restoration impossible, and can leave the device unusable. Keep your Discord support ticket open.</p></div><p className="success">✓ {artifactStatus || "Signed beta artifacts verified"}</p><label className="checkbox"><input type="checkbox" checked={riskAccepted} onChange={(event) => setRiskAccepted(event.target.checked)} /> I understand and accept the irreversible beta risks.</label><label className="field">Type <b>ERASE PSG1</b> to start<input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" /></label><button className="button danger wide" disabled={!artifactsReady || !riskAccepted || confirmation !== "ERASE PSG1"} onClick={reviewInstallationReadiness}>Review installation readiness</button></div>}
-    {stage === "install" && <div className="pending"><strong>Destructive boundary recorded.</strong><p>{destructiveBrowserFlashingValidated ? "This release is enabled for its validated supervised flow." : "No Fastboot command has been sent. This exact release still requires a signed production diagnostics pair and a complete stock-PSG1 validation run before beta flashing can be opened."}</p><small>Do not unlock, flash, or use generic Fastboot commands outside the supervised beta procedure.</small></div>}
+    {stage === "install" && <div className="pending"><strong>{installStep === "complete" ? "✓ Beta installation complete" : "Destructive boundary recorded."}</strong><p>{destructiveBrowserFlashingValidated ? installInstruction(installStep) : "No Fastboot command has been sent. This exact release still requires a signed production diagnostics pair and a complete stock-PSG1 validation run before beta flashing can be opened."}</p>{destructiveBrowserFlashingValidated && installStep !== "complete" && <button className="button danger wide" onClick={continueInstallation}>{installButton(installStep)}</button>}<small>{installStatus || "Do not unlock, flash, or use generic Fastboot commands outside the supervised beta procedure."}</small></div>}
     {error && <p className="error" role="alert">{error}</p>}
   </section>;
 }
@@ -192,6 +241,7 @@ async function request<T = unknown>(method: "GET" | "POST", path: string, token:
 const ERROR_MESSAGES: Record<string, string> = {
   BETA_INSTALLER_CLOSED: "The browser beta installer is not open yet.", BETA_CODE_REQUIRED: "A Discord beta code is required.",
   BETA_INVITE_INVALID_OR_USED: "That beta code is invalid, expired, or already bound to another PSG1.", BETA_COHORT_FULL: "The current beta cohort is full.",
+  BETA_ENTITLEMENT_NOT_FOUND: "This PSG1 does not have an active beta entitlement yet.",
   DESTRUCTIVE_TEST_MODE_BLOCKED: "Destructive installation is blocked for modified or simulated devices.", UNSUPPORTED_FIRMWARE: "This firmware is not supported. No modification was performed."
 };
 function messageOf(cause: unknown) { return cause instanceof Error ? cause.message : "Request failed"; }
@@ -200,6 +250,37 @@ function requiredBetaArtifacts(artifacts: ReleaseArtifact[]): ReleaseArtifact[] 
   const selected = required.map((component) => artifacts.find((artifact) => artifact.delivery === "private" && artifact.component === component));
   if (selected.some((artifact) => !artifact)) throw new Error("The signed beta release is missing a required system, vbmeta, diagnostics pair, Aurora Store, or RetroArch artifact.");
   return selected as ReleaseArtifact[];
+}
+async function matchingJournalStep(release: Release, scan: WebCompatibilityScan | null): Promise<BrowserInstallStep | null> {
+  if (!scan || !release.manifest?.version || !release.profile?.id || !release.manifest.artifacts) return null;
+  const journal = await loadInstallationJournal();
+  const validSteps = new Set<BrowserInstallStep>([
+    "awaiting_bootloader_unlock", "awaiting_unlocked_android", "awaiting_vbmeta_bootloader", "awaiting_system_android",
+    "awaiting_fastbootd_system", "awaiting_postflash_android", "awaiting_first_cold_boot", "awaiting_second_cold_boot", "complete"
+  ]);
+  if (!journal || !validSteps.has(journal.stage as BrowserInstallStep)
+    || journal.deviceId !== scan.deviceId || journal.bootloaderSerial !== scan.bootloaderSerial
+    || journal.profileId !== release.profile.id || journal.releaseVersion !== release.manifest.version) return null;
+  const expected = Object.fromEntries(requiredBetaArtifacts(release.manifest.artifacts).map((artifact) => [artifact.id, artifact.sha256]));
+  return Object.entries(expected).every(([id, hash]) => journal.artifactHashes[id] === hash) ? journal.stage as BrowserInstallStep : null;
+}
+function installInstruction(step: InstallUiStep): string {
+  const instructions: Record<InstallUiStep, string> = {
+    start: "Reconnect the powered-on stock PSG1 through ADB. The browser will reboot it to bootloader Fastboot.",
+    awaiting_bootloader_unlock: "Select the same PSG1 in bootloader Fastboot. Confirm the unlock prompt on the handheld if it appears.",
+    awaiting_unlocked_android: "Wait for Android after the unlock wipe, authorize USB debugging again, then reconnect the same PSG1.",
+    awaiting_vbmeta_bootloader: "Select the same PSG1 in bootloader Fastboot to flash the verified vbmeta artifact.",
+    awaiting_system_android: "Wait for Android, authorize USB debugging again, then reconnect the same PSG1 to enter Fastbootd.",
+    awaiting_fastbootd_system: "Select the same PSG1 in Fastbootd. The verified sparse system image will be flashed and userdata wiped.",
+    awaiting_postflash_android: "Wait for the flashed system to boot, complete its first setup, authorize USB debugging, then reconnect the same PSG1 to install the verified APKs.",
+    awaiting_first_cold_boot: "Reconnect the same PSG1 after its first cold boot. It will reboot once more.",
+    awaiting_second_cold_boot: "Reconnect the same PSG1 after its second cold boot to run the signed diagnostics.",
+    complete: "Aurora Store, RetroArch, diagnostics, and two cold boots were verified. Keep your Discord ticket open for handoff."
+  };
+  return instructions[step];
+}
+function installButton(step: InstallUiStep): string {
+  return step === "start" ? "Start signed installation" : step === "complete" ? "Complete" : "Select same PSG1 and continue";
 }
 function base64Url(bytes: Uint8Array) { return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", ""); }
 function subscribeBrowserCapability(onStoreChange: () => void) { window.addEventListener("load", onStoreChange); return () => window.removeEventListener("load", onStoreChange); }

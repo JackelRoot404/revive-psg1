@@ -42,8 +42,8 @@ for (const source of input.artifacts) {
       ...(source.packageName ? { packageName: requirePackageName(source.packageName, `${source.id}.packageName`) } : {}),
       ...(source.versionName ? { versionName: requireVersionName(source.versionName, `${source.id}.versionName`) } : {})
     });
-    if (source.kind === "apk" && (!source.signerSha256 || !source.packageName || !source.versionName)) {
-      throw new Error(`APK ${source.id} requires signerSha256, packageName, and versionName`);
+    if (source.kind === "apk" && (!source.signerSha256 || !source.packageName || (source.component !== "diagnostics_test" && !source.versionName))) {
+      throw new Error(`APK ${source.id} requires signerSha256, packageName, and${source.component === "diagnostics_test" ? "" : " versionName"}`);
     }
   } else if (source.delivery === "customer_supplied") {
     if (source.kind !== "system" || source.component !== "google_mobile_services") throw new Error(`Customer artifact ${source.id} must be the approved Play-enabled system image`);

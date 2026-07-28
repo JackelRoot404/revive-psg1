@@ -118,6 +118,10 @@ export const betaActivateSchema = z.object({
   betaInviteToken: betaInviteTokenSchema
 });
 
+export const betaResumeSchema = z.object({
+  sessionId: uuidSchema
+});
+
 export const installationStartSchema = z.object({
   termsVersion: z.string().trim().min(1).max(80),
   irreversibleRiskAcknowledged: z.literal(true),
@@ -180,7 +184,7 @@ export const privateFirmwareArtifactSchema = artifactBaseSchema.extend({
   if (artifact.kind !== "apk") return;
   if (!artifact.signerSha256) context.addIssue({ code: z.ZodIssueCode.custom, path: ["signerSha256"], message: "APK signer digest is required" });
   if (!artifact.packageName) context.addIssue({ code: z.ZodIssueCode.custom, path: ["packageName"], message: "APK package name is required" });
-  if (!artifact.versionName) context.addIssue({ code: z.ZodIssueCode.custom, path: ["versionName"], message: "APK version name is required" });
+  if (artifact.component !== "diagnostics_test" && !artifact.versionName) context.addIssue({ code: z.ZodIssueCode.custom, path: ["versionName"], message: "APK version name is required" });
 });
 
 export const customerSuppliedFirmwareArtifactSchema = artifactBaseSchema.extend({

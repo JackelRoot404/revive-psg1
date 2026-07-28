@@ -2,6 +2,7 @@ package com.revivepsg1.diagnostics;
 
 import static org.junit.Assert.assertTrue;
 
+import android.app.Instrumentation;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.hardware.biometrics.BiometricManager;

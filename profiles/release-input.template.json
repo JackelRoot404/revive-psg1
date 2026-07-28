@@ -53,7 +53,6 @@
       "path": "work/artifacts/revive-diagnostics-test.apk",
       "objectKey": "private/releases/1.0.0-beta.1/revive-diagnostics-test.apk",
       "packageName": "com.revivepsg1.diagnostics.test",
-      "versionName": "0.1.0",
       "signerSha256": "REPLACE_WITH_PRODUCTION_SIGNER_SHA256"
     },
     {

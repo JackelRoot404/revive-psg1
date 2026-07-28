@@ -25,6 +25,7 @@ describe("compatibility checker only mode", () => {
       { method: "POST" as const, url: "/v1/web/wizard/challenge" },
       { method: "POST" as const, url: "/v1/web/wizard/verify" },
       { method: "GET" as const, url: "/v1/releases/stable" },
+      { method: "POST" as const, url: "/v1/beta/resume" },
       { method: "POST" as const, url: "/v1/licenses/00000000-0000-4000-8000-000000000001/installation-started" }
     ]) {
       const response = await app.inject(route);
