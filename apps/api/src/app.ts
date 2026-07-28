@@ -115,6 +115,11 @@ export async function buildApp(dependencies: Dependencies) {
     methods: ["GET", "POST"]
   });
   await app.register(rateLimit, { max: 60, timeWindow: "1 minute", ...(redis ? { redis } : {}) });
+  app.addHook("onRequest", async (request, reply) => {
+    if (config.betaBrowserInstaller && isLegacyCommerceOrRecoveryPath(request.url)) {
+      return reply.code(404).send({ code: "BETA_ONLY_ROUTE_DISABLED" });
+    }
+  });
 
   app.get("/healthz", async () => ({ ok: true }));
   app.get("/readyz", async (_request, reply) => {
@@ -1192,6 +1197,13 @@ async function publicSaleReady(db: Database): Promise<boolean> {
 
 export function installerBlockedInScanOnlyMode(config: Config): boolean {
   return config.compatibilityCheckerOnly || !config.betaBrowserInstaller;
+}
+
+function isLegacyCommerceOrRecoveryPath(url: string): boolean {
+  const pathname = url.split("?", 1)[0] ?? url;
+  return /^\/v1\/(?:web\/wizard|wallet|orders)(?:\/|$)/u.test(pathname)
+    || /^\/v1\/licenses\/[^/]+\/refunds(?:\/|$)/u.test(pathname)
+    || /^\/v1\/devices\/[^/]+\/entitlement\/(?:claim|recover)(?:\/|$)/u.test(pathname);
 }
 
 export function launchGateSetComplete(
