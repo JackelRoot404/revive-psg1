@@ -16,7 +16,7 @@ node_modules/
 # next.js
 **/.next/
 /.vinext/
-/out/
+**/out/
 
 # misc
 .DS_Store
