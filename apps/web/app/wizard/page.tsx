@@ -1,15 +1,15 @@
 import { Wizard } from "./wizard";
-import { isCompatibilityCheckerOnly, isDevelopmentHardwareFixtureEnabled, isEarlyAccessFree } from "../../lib/server-config";
+import { isBetaBrowserInstallerEnabled, isCompatibilityCheckerOnly, isDevelopmentHardwareFixtureEnabled } from "../../lib/server-config";
 
 export const metadata = {
-  title: "Compatibility checker",
-  description: "Run a free read-only WebUSB scan to see if your PSG1 matches a supported Revive profile."
+  title: "PSG1 browser beta",
+  description: "Discord-supervised browser beta for supported PSG1 handhelds."
 };
 
 export default function WizardPage() {
   return <main className="wizard-shell"><Wizard
-    earlyAccessFree={isEarlyAccessFree()}
     developmentHardwareFixture={isDevelopmentHardwareFixtureEnabled()}
     compatibilityCheckerOnly={isCompatibilityCheckerOnly()}
+    betaBrowserInstaller={isBetaBrowserInstallerEnabled()}
   /></main>;
 }

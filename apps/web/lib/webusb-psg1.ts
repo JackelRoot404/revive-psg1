@@ -143,6 +143,14 @@ export class WebAdbPsg1 {
     }
   }
 
+  async rebootFastboot(): Promise<void> {
+    try {
+      await this.adb.power.fastboot();
+    } catch (cause) {
+      if (!isExpectedUsbDisconnect(cause)) throw cause;
+    }
+  }
+
   async close(): Promise<void> {
     await this.adb.close();
   }
@@ -202,6 +210,59 @@ export class WebFastbootPsg1 {
     return parseFastbootVariable(name, await this.command(`getvar:${name}`));
   }
 
+  async maxDownloadSize(): Promise<number> {
+    return parseFastbootSize(await this.getVariable("max-download-size"));
+  }
+
+  async unlockVerifiedBoot(): Promise<void> {
+    await this.command("oem at-unlock-vboot");
+  }
+
+  async flash(partition: "vbmeta" | "system", payload: Blob): Promise<void> {
+    await this.download(payload);
+    await this.command(`flash:${partition}`);
+  }
+
+  async resizeLogicalSystem(size: number): Promise<void> {
+    if (!Number.isSafeInteger(size) || size <= 0) throw new Error("System partition size is invalid.");
+    await this.command(`resize-logical-partition:system:${size}`);
+  }
+
+  async wipeUserData(): Promise<void> {
+    await this.command("erase:userdata");
+  }
+
+  async download(payload: Blob): Promise<void> {
+    if (!Number.isSafeInteger(payload.size) || payload.size <= 0 || payload.size > 0xffffffff) {
+      throw new Error("Fastboot payload size is invalid.");
+    }
+    const limit = await this.maxDownloadSize();
+    if (!limit || payload.size > limit) {
+      throw new Error(`The signed artifact is ${payload.size} bytes, but this PSG1 only accepts ${limit || 0} bytes per Fastboot download. A tested sparse-image release is required; no flash was attempted.`);
+    }
+    await this.sendCommand(`download:${payload.size.toString(16).padStart(8, "0")}`);
+    const data = await this.readResponse();
+    if (data.status !== "DATA") throw new Error("Fastboot did not accept the download request.");
+    const accepted = Number.parseInt(data.payload.replace(/^0x/iu, ""), 16);
+    if (!Number.isSafeInteger(accepted) || accepted !== payload.size) {
+      throw new Error("Fastboot accepted an unexpected download size.");
+    }
+    const reader = payload.stream().getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value?.byteLength) continue;
+        const sent = await this.raw.transferOut(this.outEndpoint, value);
+        if (sent.status !== "ok" || sent.bytesWritten !== value.byteLength) throw new Error("Fastboot artifact transfer failed.");
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const complete = await this.readTerminal();
+    if (complete.status !== "OKAY") throw new Error("Fastboot did not confirm the artifact download.");
+  }
+
   async reboot(): Promise<void> {
     await this.command("reboot");
   }
@@ -211,22 +272,35 @@ export class WebFastbootPsg1 {
   }
 
   private async command(command: string): Promise<string> {
+    await this.sendCommand(command);
+    const result = await this.readTerminal();
+    return result.payload;
+  }
+
+  private async sendCommand(command: string): Promise<void> {
     const encoded = new TextEncoder().encode(command);
     if (encoded.byteLength > 64 || !/^[\x20-\x7e]+$/u.test(command)) throw new Error("Fastboot command is invalid.");
     const sent = await this.raw.transferOut(this.outEndpoint, encoded);
     if (sent.status !== "ok" || sent.bytesWritten !== encoded.byteLength) throw new Error("Fastboot command transfer failed.");
+  }
+
+  private async readResponse(): Promise<ReturnType<typeof parseFastbootResponse>> {
+    const response = await this.raw.transferIn(this.inEndpoint, 64);
+    if (response.status !== "ok" || !response.data) throw new Error("Fastboot response transfer failed.");
+    return parseFastbootResponse(new Uint8Array(response.data.buffer, response.data.byteOffset, response.data.byteLength));
+  }
+
+  private async readTerminal(): Promise<{ status: "OKAY"; payload: string }> {
     const info: string[] = [];
     for (let attempt = 0; attempt < 512; attempt += 1) {
-      const response = await this.raw.transferIn(this.inEndpoint, 64);
-      if (response.status !== "ok" || !response.data) throw new Error("Fastboot response transfer failed.");
-      const parsed = parseFastbootResponse(new Uint8Array(response.data.buffer, response.data.byteOffset, response.data.byteLength));
+      const parsed = await this.readResponse();
       if (parsed.status === "INFO") {
         if (parsed.payload) info.push(parsed.payload);
         continue;
       }
       if (parsed.status === "FAIL") throw new Error(`Fastboot rejected the command: ${parsed.payload || info.at(-1) || "unknown error"}`);
-      if (parsed.status === "DATA") throw new Error("Unexpected Fastboot data phase during read-only web preflight.");
-      return parsed.payload || info.join("\n");
+      if (parsed.status === "DATA") throw new Error("Unexpected Fastboot data phase.");
+      return { status: "OKAY", payload: parsed.payload || info.join("\n") };
     }
     throw new Error("Fastboot produced too many informational responses.");
   }

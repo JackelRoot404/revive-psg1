@@ -113,6 +113,17 @@ export const earlyAccessActivateSchema = z.object({
   sessionId: uuidSchema
 });
 
+export const betaActivateSchema = z.object({
+  sessionId: uuidSchema,
+  betaInviteToken: betaInviteTokenSchema
+});
+
+export const installationStartSchema = z.object({
+  termsVersion: z.string().trim().min(1).max(80),
+  irreversibleRiskAcknowledged: z.literal(true),
+  confirmation: z.literal("ERASE PSG1")
+});
+
 export const entitlementRecoverySchema = z.object({
   recoveryCredential: recoveryCredentialSchema
 });

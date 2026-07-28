@@ -7,9 +7,10 @@ describe("compatibility checker only mode", () => {
     expect(loadConfig({ NODE_ENV: "development" }).compatibilityCheckerOnly).toBe(true);
   });
 
-  it("allows full installer routes when explicitly disabled", () => {
+  it("opens full installer routes only with the explicit beta gate", () => {
     expect(loadConfig({ NODE_ENV: "development", COMPATIBILITY_CHECKER_ONLY: "false" }).compatibilityCheckerOnly).toBe(false);
-    expect(installerBlockedInScanOnlyMode(loadConfig({ NODE_ENV: "development", COMPATIBILITY_CHECKER_ONLY: "false" }))).toBe(false);
+    expect(installerBlockedInScanOnlyMode(loadConfig({ NODE_ENV: "development", COMPATIBILITY_CHECKER_ONLY: "false" }))).toBe(true);
+    expect(installerBlockedInScanOnlyMode(loadConfig({ NODE_ENV: "development", COMPATIBILITY_CHECKER_ONLY: "false", BETA_BROWSER_INSTALLER: "true" }))).toBe(false);
   });
 
   it("blocks installer routes before auth when scan-only is enabled", async () => {

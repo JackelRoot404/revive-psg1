@@ -5,8 +5,9 @@ export const USDC_DECIMALS = 6;
 export const USDC_AMOUNT_BASE_UNITS = 19_000_000n;
 export const SOLANA_USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 export const TREASURY_WALLET = "EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y";
-export const BETA_PROMO_CODE = "BICCSDEV";
-export const BETA_PROMO_LIMIT = 10;
+// Internal program counter only. This string is never a redeemable code.
+export const BETA_PROMO_CODE = "DISCORD_BROWSER_BETA";
+export const BETA_PROMO_LIMIT = 25;
 export const BETA_INVITE_PREFIX = "rpb_";
 export const RECOVERY_CREDENTIAL_PREFIX = "rpr_";
 export const WIPE_CONFIRMATION = "ERASE PSG1";

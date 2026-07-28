@@ -17,12 +17,12 @@ Safari, Firefox, Android, and iOS are unsupported because they do not provide th
 2. It reads the immutable Rockchip CPU serial through ADB, reboots to Fastboot, and pauses. The owner presses a dedicated continuation button because WebUSB requires a fresh user gesture for the second device chooser. The wizard then requests the Fastboot interface, requires the CPU serial to match the Fastboot protocol, records whether the browser-reported USB descriptor also matches, reads the system partition size, and reboots to Android. Brave can expose a cached Android-mode descriptor for paired devices, so that descriptor flag is advisory only after the immutable identity match succeeds.
 3. The browser creates a signed ephemeral session. The private session key is kept in memory.
 4. Unknown firmware stops before charging, binding, unlocking, wiping, or flashing.
-5. A compatible injected wallet signs a checkout challenge. Paid orders transfer exactly 19 USDC and are accepted only after finalized backend verification.
-6. The receipt wallet signs a second message bound to the web-installer purpose, order, license, device, nonce, and expiration.
-7. The API issues a ten-minute `web-installer` token. The token can fetch the signed release and mark the destructive boundary; it cannot claim, recover, or refund a license.
-8. Every release profile, manifest, and artifact must pass signature and hash verification before any destructive command.
+5. A Discord-issued one-time `rpb_…` code binds atomically to the first compatible PSG1 that redeems it. The free beta cohort is capped at 25.
+6. The API issues a two-hour `web-installer` token bound to the scanned device and browser session. A new scan of the same device can resume after interruption without consuming another code.
+7. Every release profile, manifest, system/vbmeta artifact, Aurora Store APK, and RetroArch APK must pass signature and hash verification before any destructive command.
+8. Immediately before unlock, the owner accepts the versioned no-recovery warning and types the exact wipe phrase.
 
-During free Early Access, steps 5 and 6 are replaced by a zero-value device-bound activation. The wallet/payment implementation remains disabled behind `EARLY_ACCESS_FREE=true` rather than being removed.
+The beta has no wallet, payment, refund, or echOS recovery flow. The code is free, but conversion can be irreversible.
 
 The free scan intentionally precedes payment: compatibility and the stable device identifier must be known before a customer can be charged.
 

@@ -11,3 +11,7 @@ export function isDevelopmentHardwareFixtureEnabled(environment: NodeJS.ProcessE
 export function isCompatibilityCheckerOnly(environment: NodeJS.ProcessEnv = process.env): boolean {
   return environment.NEXT_PUBLIC_COMPATIBILITY_CHECKER_ONLY !== "false";
 }
+
+export function isBetaBrowserInstallerEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
+  return environment.NEXT_PUBLIC_BETA_BROWSER_INSTALLER === "true";
+}

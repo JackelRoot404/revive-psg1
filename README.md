@@ -2,15 +2,15 @@
 
 Self-service software for converting a compatible PlaySolana PSG1 into a general-purpose Android gaming handheld. The product is a Netlify-hosted Chrome/Edge WebUSB wizard backed by a Fastify API on DigitalOcean App Platform.
 
-> **Early Access / fail-closed installation.** Access is free while the project matures. Compatibility, signing/provenance, restoration, dependency/legal work, and every destructive-installation gate still fail closed. Do not distribute experimental images.
+> **Private browser beta / fail-closed installation.** Access is free only to Discord-supervised testers with a one-time code. Compatibility, signing/provenance, hardware evidence, dependency/legal work, and every destructive-installation gate fail closed. Conversion may be irreversible; do not distribute experimental images.
 
 ## What is implemented
 
 - Read-only Android Rockchip CPU serial → Fastboot protocol verification, browser USB-descriptor telemetry, and stable SHA-256 device binding.
 - Signed firmware-profile matching and unknown-firmware rejection.
-- Signed ephemeral web sessions, a free WebUSB ADB/Fastboot identity scan, Wallet Standard checkout, exact 19 USDC construction, finalized verification, purpose-bound receipt-wallet installer authorization, one-use references, and device-bound licensing.
-- Backend-approved, one-time beta invites bound to a scanned device and atomically capped at ten redemptions; `BICCSDEV` is an internal program label, not a public coupon.
-- Recoverable device entitlement independent of the installed Android OS or computer.
+- Signed ephemeral web sessions, a WebUSB ADB/Fastboot identity scan, Discord-issued one-time-code activation, atomic first-device binding, and a device-bound beta entitlement.
+- Backend-approved beta codes atomically bind to the first compatible PSG1 and are capped at 25 redemptions; the program label is never a public coupon.
+- Browser Fastboot transport supports the guarded download protocol and fails closed until the exact signed artifact and hardware download-window are validated.
 - Journaled allowlisted installer engine for `fastboot oem at-unlock-vboot`, validated fastbootd, vbmeta/system flashing, wipe, and reboot.
 - Resume-capable, three-attempt artifact downloads with size and SHA-256 verification.
 - Refund cutoff recorded immediately before destructive work, plus pre-modification refund requests.
@@ -19,7 +19,7 @@ Self-service software for converting a compatible PlaySolana PSG1 into a general
 
 ## Product limitations
 
-- The PSG1 remains bootloader-unlocked after conversion.
+- The PSG1 remains bootloader-unlocked after conversion, and no echOS restoration image is provided. Conversion may be irreversible.
 - The device/ROM is not Google-certified; Play Integrity, banking, DRM, and some games may refuse to run.
 - Revive does not distribute, proxy, or host an unlicensed Play-enabled Android image. Every accepted customer-supplied artifact must match an exact signed release hash.
 - Fingerprint is currently unvalidated and not guaranteed, so it is not a launch feature.
@@ -29,7 +29,7 @@ Self-service software for converting a compatible PlaySolana PSG1 into a general
 ## Repository
 
 ```text
-apps/web       Next.js website, WebUSB wizard, and injected-wallet checkout (Netlify)
+apps/web       Next.js website and Discord-supervised WebUSB beta wizard (Netlify)
 apps/api       Fastify API, Drizzle schema/migrations, Solana verification (DigitalOcean)
 packages/contracts  Shared Zod schemas, messages, constants
 profiles       Unsigned compatibility-profile source templates
@@ -83,7 +83,7 @@ See the [tester launch checklist](docs/tester-launch-checklist.md), [devnet paym
 5. Upload signed private artifacts to Spaces and insert their separately signed release manifest.
 6. Open tester access only after all launch-gate records carry reviewed evidence.
 
-Early Access is free when `EARLY_ACCESS_FREE=true` (the default). This creates a zero-value device-bound entitlement without wallet or payment requirements while preserving the paid checkout implementation. Set the same flag to `false` on the API and web deployment to restore paid enforcement.
+The browser beta remains closed until both `BETA_BROWSER_INSTALLER=true` on the API and `NEXT_PUBLIC_BETA_BROWSER_INSTALLER=true` on Netlify are enabled. Public sales remain disabled. Testers redeem a one-time Discord `rpb_…` code that binds to their first supported PSG1.
 
 The optional-donation treasury is fixed to `EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y`. No treasury private key is needed or accepted by this system.
 

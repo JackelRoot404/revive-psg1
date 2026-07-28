@@ -64,6 +64,13 @@
       "when": 1784259987231,
       "tag": "0008_typical_dust",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785209000000,
+      "tag": "0009_discord_browser_beta",
+      "breakpoints": true
     }
   ]
 }

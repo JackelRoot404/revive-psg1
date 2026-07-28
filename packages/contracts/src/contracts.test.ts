@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { BETA_PROMO_CODE, DEVELOPMENT_FIXTURE_COMPATIBILITY, DEVELOPMENT_FIXTURE_DEVICE_ID, LICENSE_PRICE_USDC, TREASURY_WALLET, USDC_AMOUNT_BASE_UNITS, browserProofMessage, compatibilityProfileSchema, deviceIdSchema, earlyAccessActivateSchema, entitlementRecoverySchema, firmwareArtifactSchema, isExactDevelopmentFixture, isSafeDevelopmentModifiedScan, orderCreateSchema, releaseManifestSchema, sessionCreateSchema, sessionProofMessage, webCheckoutWalletChallengeMessage, webInstallerWalletChallengeMessage, webSessionCreateSchema, webSessionProofMessage } from "./index";
+import { BETA_PROMO_CODE, DEVELOPMENT_FIXTURE_COMPATIBILITY, DEVELOPMENT_FIXTURE_DEVICE_ID, LICENSE_PRICE_USDC, TREASURY_WALLET, USDC_AMOUNT_BASE_UNITS, betaActivateSchema, browserProofMessage, compatibilityProfileSchema, deviceIdSchema, earlyAccessActivateSchema, entitlementRecoverySchema, firmwareArtifactSchema, installationStartSchema, isExactDevelopmentFixture, isSafeDevelopmentModifiedScan, orderCreateSchema, releaseManifestSchema, sessionCreateSchema, sessionProofMessage, webCheckoutWalletChallengeMessage, webInstallerWalletChallengeMessage, webSessionCreateSchema, webSessionProofMessage } from "./index";
 
 describe("public contracts", () => {
   it("accepts a SHA-256 device id", () => {
@@ -11,7 +11,7 @@ describe("public contracts", () => {
   });
 
   it("pins the commercial constants", () => {
-    expect(BETA_PROMO_CODE).toBe("BICCSDEV");
+    expect(BETA_PROMO_CODE).toBe("DISCORD_BROWSER_BETA");
     expect(LICENSE_PRICE_USDC).toBe("19.000000");
     expect(USDC_AMOUNT_BASE_UNITS).toBe(19_000_000n);
     expect(TREASURY_WALLET).toBe("EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y");
@@ -26,6 +26,12 @@ describe("public contracts", () => {
   it("requires a concrete device session for free Early Access activation", () => {
     expect(earlyAccessActivateSchema.parse({ sessionId: "00000000-0000-4000-8000-000000000000" }).sessionId).toMatch(/^00000000/);
     expect(() => earlyAccessActivateSchema.parse({})).toThrow();
+  });
+
+  it("requires an explicit beta code and irreversible acknowledgement", () => {
+    expect(betaActivateSchema.parse({ sessionId: "00000000-0000-4000-8000-000000000000", betaInviteToken: `rpb_${"a".repeat(32)}` }).betaInviteToken).toMatch(/^rpb_/);
+    expect(() => installationStartSchema.parse({ termsVersion: "beta-1", irreversibleRiskAcknowledged: true, confirmation: "erase" })).toThrow();
+    expect(installationStartSchema.parse({ termsVersion: "beta-1", irreversibleRiskAcknowledged: true, confirmation: "ERASE PSG1" }).confirmation).toBe("ERASE PSG1");
   });
 
   it("requires prefixed high-entropy beta and recovery credentials", () => {

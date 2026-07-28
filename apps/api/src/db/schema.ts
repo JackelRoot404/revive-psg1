@@ -128,7 +128,9 @@ export const licenses = pgTable("licenses", {
 export const betaInvites = pgTable("beta_invites", {
   id: uuid("id").primaryKey(),
   tokenDigest: varchar("token_digest", { length: 64 }).notNull(),
-  deviceId: varchar("device_id", { length: 64 }).notNull(),
+  // A Discord code is intentionally unbound when issued. The redemption
+  // transaction binds it to its first supported physical PSG1.
+  deviceId: varchar("device_id", { length: 64 }),
   label: varchar("label", { length: 120 }),
   enabled: boolean("enabled").notNull().default(true),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -137,7 +139,7 @@ export const betaInvites = pgTable("beta_invites", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 }, (table) => [
   uniqueIndex("beta_invites_token_uq").on(table.tokenDigest),
-  uniqueIndex("beta_invites_device_uq").on(table.deviceId),
+  uniqueIndex("beta_invites_device_uq").on(table.deviceId).where(sql`${table.deviceId} is not null`),
   uniqueIndex("beta_invites_order_uq").on(table.redeemedOrderId)
 ]);
 

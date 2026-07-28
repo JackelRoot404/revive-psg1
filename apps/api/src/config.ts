@@ -27,7 +27,8 @@ const environmentSchema = z.object({
   EARLY_ACCESS_FREE: z.string().default("true").transform((value) => value === "true"),
   REVIVE_DEV_HARDWARE_FIXTURE: z.string().default("false").transform((value) => value === "true"),
   PUBLIC_SALES_ENABLED: z.string().default("false").transform((value) => value === "true"),
-  COMPATIBILITY_CHECKER_ONLY: z.string().default("true").transform((value) => value === "true")
+  COMPATIBILITY_CHECKER_ONLY: z.string().default("true").transform((value) => value === "true"),
+  BETA_BROWSER_INSTALLER: z.string().default("false").transform((value) => value === "true")
 });
 
 export type Config = {
@@ -57,6 +58,7 @@ export type Config = {
   developmentHardwareFixture: boolean;
   publicSalesEnabled: boolean;
   compatibilityCheckerOnly: boolean;
+  betaBrowserInstaller: boolean;
 };
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Config {
@@ -107,6 +109,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Config
     earlyAccessFree: value.EARLY_ACCESS_FREE,
     developmentHardwareFixture: value.REVIVE_DEV_HARDWARE_FIXTURE,
     publicSalesEnabled: value.PUBLIC_SALES_ENABLED,
-    compatibilityCheckerOnly: value.COMPATIBILITY_CHECKER_ONLY
+    compatibilityCheckerOnly: value.COMPATIBILITY_CHECKER_ONLY,
+    betaBrowserInstaller: value.BETA_BROWSER_INSTALLER
   };
 }

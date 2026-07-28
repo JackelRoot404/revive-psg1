@@ -9,9 +9,9 @@ const gateKeys = [
 describe("backend security invariants", () => {
   const passedGates = gateKeys.map((key) => ({ key, passed: true, evidence: { artifact: "signed-report" }, verifiedBy: "release-manager", verifiedAt: new Date() }));
 
-  it("keeps public sales closed before the tenth atomic beta redemption", () => expect(launchGateSetComplete(passedGates, 9)).toBe(false));
-  it("keeps public sales closed when a checkbox has no evidence", () => expect(launchGateSetComplete(passedGates.map((gate, index) => index ? gate : { ...gate, evidence: {} }), 10)).toBe(false));
-  it("opens the derived gate only with all evidence and ten redemptions", () => expect(launchGateSetComplete(passedGates, 10)).toBe(true));
+  it("keeps public sales closed before the twenty-fifth atomic beta redemption", () => expect(launchGateSetComplete(passedGates, 24)).toBe(false));
+  it("keeps public sales closed when a checkbox has no evidence", () => expect(launchGateSetComplete(passedGates.map((gate, index) => index ? gate : { ...gate, evidence: {} }), 25)).toBe(false));
+  it("opens the derived gate only with all evidence and twenty-five redemptions", () => expect(launchGateSetComplete(passedGates, 25)).toBe(true));
 
   it("allows free activation only while Early Access is enabled", () => {
     expect(earlyAccessAllowed(true)).toBe(true);

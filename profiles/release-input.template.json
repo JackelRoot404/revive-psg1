@@ -10,16 +10,10 @@
     {
       "id": "psg1-system-beta-1",
       "kind": "system",
-      "delivery": "customer_supplied",
-      "component": "google_mobile_services",
-      "path": "work/customer-supplied/system.img",
-      "archivePath": "work/customer-supplied/play-enabled-lineage.img.xz",
-      "source": {
-        "label": "Play-enabled LineageOS image downloaded by the device owner",
-        "instructionsUrl": "https://revivepsg.com/docs/system-image",
-        "archiveFilenamePatterns": ["lineage-*-gapps-*.img.xz"],
-        "extractedPath": "system.img"
-      }
+      "delivery": "private",
+      "component": "android_system",
+      "path": "work/artifacts/lineageos-22.2-vanilla-arm64-ext4-system.img",
+      "objectKey": "private/releases/1.0.0-beta.1/system.img"
     },
     {
       "id": "psg1-vbmeta-beta-1",
@@ -36,6 +30,22 @@
       "component": "diagnostics",
       "path": "work/artifacts/revive-diagnostics.apk",
       "objectKey": "private/releases/1.0.0-beta.1/revive-diagnostics.apk"
+    },
+    {
+      "id": "aurora-store-beta-1",
+      "kind": "apk",
+      "delivery": "private",
+      "component": "aurora_store",
+      "path": "work/artifacts/aurora-store.apk",
+      "objectKey": "private/releases/1.0.0-beta.1/aurora-store.apk"
+    },
+    {
+      "id": "retroarch-beta-1",
+      "kind": "apk",
+      "delivery": "private",
+      "component": "retroarch",
+      "path": "work/artifacts/retroarch.apk",
+      "objectKey": "private/releases/1.0.0-beta.1/retroarch.apk"
     }
   ]
 }

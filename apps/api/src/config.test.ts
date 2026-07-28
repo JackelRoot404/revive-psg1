@@ -56,6 +56,11 @@ describe("local configuration", () => {
     expect(loadConfig({ NODE_ENV: "development", COMPATIBILITY_CHECKER_ONLY: "false" }).compatibilityCheckerOnly).toBe(false);
   });
 
+  it("keeps destructive browser installation opt-in", () => {
+    expect(loadConfig({ NODE_ENV: "development" }).betaBrowserInstaller).toBe(false);
+    expect(loadConfig({ NODE_ENV: "development", BETA_BROWSER_INSTALLER: "true" }).betaBrowserInstaller).toBe(true);
+  });
+
   it("refuses the deterministic hardware fixture in production", () => {
     expect(() => loadConfig({ ...production, REVIVE_DEV_HARDWARE_FIXTURE: "true" })).toThrow(/forbidden in production/i);
   });

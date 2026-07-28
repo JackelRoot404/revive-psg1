@@ -8,6 +8,7 @@ import Redis from "ioredis";
 import {
   BETA_PROMO_CODE,
   BETA_PROMO_LIMIT,
+  betaActivateSchema,
   DEVELOPMENT_FIXTURE_DEVICE_ID,
   DEVELOPMENT_FIXTURE_PROFILE_ID,
   DEVELOPMENT_MODIFIED_PROFILE_ID,
@@ -28,6 +29,7 @@ import {
   entitlementRecoverySchema,
   isExactDevelopmentFixture,
   isSafeDevelopmentModifiedScan,
+  installationStartSchema,
   licenseClaimMessage,
   licenseClaimSchema,
   orderCreateSchema,
@@ -246,6 +248,7 @@ export async function buildApp(dependencies: Dependencies) {
   });
 
   app.post("/v1/early-access/activate", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
+    if (config.betaBrowserInstaller) return reply.code(403).send({ code: "BETA_CODE_REQUIRED" });
     if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
     const auth = await requireToken(request, tokens, "browser-checkout");
     const input = earlyAccessActivateSchema.parse(request.body);
@@ -334,6 +337,78 @@ export async function buildApp(dependencies: Dependencies) {
       webInstallerToken,
       expiresInSeconds: 600
     });
+  });
+
+  // A Discord code is intentionally not a generic coupon. It becomes bound
+  // to the first supported physical PSG1 that redeems it inside this single
+  // transaction, and can never be used again.
+  app.post("/v1/beta/activate", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
+    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "BETA_INSTALLER_CLOSED" });
+    const auth = await requireToken(request, tokens, "browser-checkout");
+    const input = betaActivateSchema.parse(request.body);
+    if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
+    const session = await activeSession(db, input.sessionId);
+    if (!session?.supported) return reply.code(409).send({ code: "UNSUPPORTED_FIRMWARE" });
+    if (session.channel !== "web" || auth.sub !== session.pairingPublicKey) return reply.code(403).send({ code: "WEB_PAIRING_REQUIRED" });
+    const state = (session.compatibility as { installationState?: string }).installationState;
+    if (state !== "stock_locked") return reply.code(409).send({ code: "DESTRUCTIVE_TEST_MODE_BLOCKED" });
+    await enforceDistributedLimit(redis, `beta-code:ip:${request.ip}`, 10, 60 * 60);
+    await enforceDistributedLimit(redis, `beta-code:device:${session.deviceId}`, 5, 60 * 60);
+
+    let license = await activeLicenseForDevice(db, session.deviceId);
+    let created = false;
+    if (!license) {
+      const orderId = randomUUID();
+      const licenseId = randomUUID();
+      const inviteDigest = sha256(input.betaInviteToken);
+      try {
+        await db.transaction(async (tx) => {
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${session.deviceId}, 0))`);
+          const [existingLicense] = await tx.select({ id: licenses.id }).from(licenses).where(and(eq(licenses.deviceId, session.deviceId), eq(licenses.status, "active"))).limit(1);
+          if (existingLicense) return;
+          const boundInvite = await tx.update(betaInvites).set({ deviceId: session.deviceId }).where(and(
+            eq(betaInvites.tokenDigest, inviteDigest),
+            eq(betaInvites.enabled, true),
+            gt(betaInvites.expiresAt, new Date()),
+            isNull(betaInvites.redeemedAt),
+            isNull(betaInvites.deviceId)
+          )).returning({ id: betaInvites.id });
+          if (!boundInvite.length) throw apiError("BETA_INVITE_INVALID_OR_USED", 409);
+          await tx.insert(promoCodes).values({
+            codeHash: sha256(BETA_PROMO_CODE), label: "Discord browser beta", maxRedemptions: BETA_PROMO_LIMIT
+          }).onConflictDoNothing();
+          const counter = await tx.update(promoCodes).set({ redemptionCount: sql`${promoCodes.redemptionCount} + 1` }).where(and(
+            eq(promoCodes.codeHash, sha256(BETA_PROMO_CODE)),
+            eq(promoCodes.enabled, true),
+            sql`${promoCodes.redemptionCount} < ${BETA_PROMO_LIMIT}`
+          )).returning({ codeHash: promoCodes.codeHash });
+          if (!counter.length) throw apiError("BETA_COHORT_FULL", 409);
+          await tx.insert(orders).values({
+            id: orderId, sessionId: session.id, deviceId: session.deviceId,
+            wallet: session.pairingPublicKey, kind: "early_access", status: "free_activated",
+            reference: randomSolanaAddress(), amountBaseUnits: 0n, mint: SOLANA_USDC_MINT,
+            treasury: config.treasuryWallet, betaInviteTokenDigest: inviteDigest, expiresAt: session.expiresAt
+          });
+          await tx.update(betaInvites).set({ redeemedAt: new Date(), redeemedOrderId: orderId }).where(eq(betaInvites.id, boundInvite[0]!.id));
+          await tx.insert(promoRedemptions).values({ id: randomUUID(), codeHash: sha256(BETA_PROMO_CODE), orderId, deviceId: session.deviceId, wallet: session.pairingPublicKey });
+          if (!session.profileId) throw apiError("SESSION_PROFILE_MISSING", 409);
+          await tx.insert(devices).values({ id: session.deviceId, profileId: session.profileId, serialVerified: true, licensedAt: new Date() })
+            .onConflictDoUpdate({ target: devices.id, set: { profileId: session.profileId, serialVerified: true, lastSeenAt: new Date(), licensedAt: new Date() } });
+          await tx.insert(licenses).values({ id: licenseId, deviceId: session.deviceId, orderId, receiptWallet: session.pairingPublicKey });
+          created = true;
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) return reply.code(409).send({ code: "DEVICE_ALREADY_LICENSED_OR_CODE_BOUND" });
+        throw error;
+      }
+      license = await activeLicenseForDevice(db, session.deviceId);
+    }
+    if (!license) throw new Error("Beta activation did not produce a device entitlement");
+    const webInstallerToken = await tokens.issueSessionToken({
+      audience: "web-installer", subject: license.id, sessionId: session.id, deviceId: session.deviceId, expiresIn: "2h"
+    });
+    await audit(db, created ? "beta.activated" : "beta.resumed", { actor: session.deviceId, subjectId: license.id, payload: { orderId: license.orderId } });
+    return reply.code(created ? 201 : 200).send({ licenseId: license.id, orderId: license.orderId, webInstallerToken, expiresInSeconds: 7200 });
   });
 
   app.post("/v1/sessions/:id/browser-proof/challenge", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
@@ -824,6 +899,7 @@ export async function buildApp(dependencies: Dependencies) {
     if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
     const auth = await verifyInstallerAccess(request, tokens);
     const id = uuidSchema.parse((request.params as { id: string }).id);
+    const acknowledgement = installationStartSchema.parse(request.body);
     if (auth.sub !== id) return reply.code(403).send({ code: "LICENSE_MISMATCH" });
     const [current] = await db.select().from(licenses).where(and(eq(licenses.id, id), eq(licenses.status, "active"))).limit(1);
     if (!current || auth.deviceId !== current.deviceId) return reply.code(404).send({ code: "LICENSE_NOT_FOUND" });
@@ -840,7 +916,10 @@ export async function buildApp(dependencies: Dependencies) {
     if (current.modificationStartedAt) return { modificationStartedAt: current.modificationStartedAt.toISOString() };
     const result = await db.update(licenses).set({ modificationStartedAt: new Date() }).where(and(eq(licenses.id, id), eq(licenses.status, "active"), isNull(licenses.modificationStartedAt))).returning();
     if (!result.length) return reply.code(409).send({ code: "INSTALLATION_BOUNDARY_RACE" });
-    await audit(db, "installation.started", { actor: String(auth.deviceId), subjectId: id });
+    await audit(db, "installation.started", {
+      actor: String(auth.deviceId), subjectId: id,
+      payload: { termsVersion: acknowledgement.termsVersion, irreversibleRiskAcknowledged: true }
+    });
     return { modificationStartedAt: result[0]!.modificationStartedAt?.toISOString() };
   });
 
@@ -1088,7 +1167,7 @@ async function publicSaleReady(db: Database): Promise<boolean> {
 }
 
 export function installerBlockedInScanOnlyMode(config: Config): boolean {
-  return config.compatibilityCheckerOnly;
+  return config.compatibilityCheckerOnly || !config.betaBrowserInstaller;
 }
 
 export function launchGateSetComplete(
