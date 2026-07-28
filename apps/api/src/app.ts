@@ -358,6 +358,7 @@ export async function buildApp(dependencies: Dependencies) {
     if (session.channel !== "web" || auth.sub !== session.pairingPublicKey) return reply.code(403).send({ code: "WEB_PAIRING_REQUIRED" });
     const state = (session.compatibility as { installationState?: string }).installationState;
     if (state !== "stock_locked") return reply.code(409).send({ code: "DESTRUCTIVE_TEST_MODE_BLOCKED" });
+    if (!await betaReleaseReady(db, config)) return reply.code(503).send({ code: "BETA_RELEASE_NOT_READY" });
     await enforceDistributedLimit(redis, `beta-code:ip:${request.ip}`, 10, 60 * 60);
     await enforceDistributedLimit(redis, `beta-code:device:${session.deviceId}`, 5, 60 * 60);
 
@@ -1028,6 +1029,7 @@ export async function buildApp(dependencies: Dependencies) {
     if (!release || !verifySignedDocument(release.signedManifest, release.signature, config.releasePublicKeyPem)) return reply.code(404).send({ code: "NO_STABLE_RELEASE" });
     const manifest = releaseManifestSchema.safeParse({ ...(release.signedManifest as object), signature: release.signature });
     if (!manifest.success) return reply.code(409).send({ code: "RELEASE_MANIFEST_INVALID" });
+    if (config.betaBrowserInstaller && !betaManifestEvidenceReady(manifest.data)) return reply.code(503).send({ code: "BETA_RELEASE_NOT_READY" });
     const privateArtifacts = manifest.data.artifacts.filter((artifact) => artifact.delivery === "private");
     const downloadUrls = Object.fromEntries(await Promise.all(privateArtifacts.map(async (artifact) => [
       artifact.objectKey,
@@ -1204,6 +1206,21 @@ function isLegacyCommerceOrRecoveryPath(url: string): boolean {
   return /^\/v1\/(?:web\/wizard|wallet|orders)(?:\/|$)/u.test(pathname)
     || /^\/v1\/licenses\/[^/]+\/refunds(?:\/|$)/u.test(pathname)
     || /^\/v1\/devices\/[^/]+\/entitlement\/(?:claim|recover)(?:\/|$)/u.test(pathname);
+}
+
+async function betaReleaseReady(db: Database, config: Config): Promise<boolean> {
+  const [release] = await db.select().from(releases).where(and(eq(releases.channel, "stable"), eq(releases.active, true))).orderBy(desc(releases.publishedAt)).limit(1);
+  if (!release || !verifySignedDocument(release.signedManifest, release.signature, config.releasePublicKeyPem)) return false;
+  const manifest = releaseManifestSchema.safeParse({ ...(release.signedManifest as object), signature: release.signature });
+  return manifest.success && betaManifestEvidenceReady(manifest.data);
+}
+
+function betaManifestEvidenceReady(manifest: { betaEvidence?: { artifactSha256: Record<string, string> } | undefined; artifacts: Array<{ id: string; sha256: string; delivery: string; component: string }> }): boolean {
+  const required = ["android_system", "verified_boot", "diagnostics", "diagnostics_test", "aurora_store", "retroarch"];
+  if (!manifest.betaEvidence) return false;
+  const privateArtifacts = manifest.artifacts.filter((artifact) => artifact.delivery === "private");
+  return required.every((component) => privateArtifacts.some((artifact) => artifact.component === component))
+    && privateArtifacts.every((artifact) => manifest.betaEvidence?.artifactSha256[artifact.id] === artifact.sha256);
 }
 
 export function launchGateSetComplete(
