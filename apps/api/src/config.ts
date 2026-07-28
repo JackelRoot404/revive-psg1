@@ -8,6 +8,9 @@ const environmentSchema = z.object({
   PUBLIC_WEB_URL: z.string().url().default("http://localhost:3000"),
   ALLOWED_ORIGINS: z.string().default("http://localhost:3000"),
   DATABASE_URL: z.string().min(1).default("postgresql://revive:revive@localhost:5432/revive_psg1"),
+  // Used only by the one-time, pre-server beta schema migration. It is removed
+  // from the deployment as soon as that migration has completed.
+  MIGRATION_DATABASE_URL: z.string().min(1).optional(),
   DATABASE_CA_PATH: z.string().optional(),
   DATABASE_CA_PEM: z.string().optional(),
   VALKEY_URL: z.string().optional(),
@@ -41,6 +44,7 @@ export type Config = {
   publicWebUrl: string;
   allowedOrigins: string[];
   databaseUrl: string;
+  migrationDatabaseUrl?: string;
   databaseCaPath?: string;
   databaseCaPem?: string;
   valkeyUrl?: string;
@@ -94,6 +98,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Config
     publicWebUrl: value.PUBLIC_WEB_URL,
     allowedOrigins: value.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean),
     databaseUrl: value.DATABASE_URL,
+    ...(value.MIGRATION_DATABASE_URL ? { migrationDatabaseUrl: value.MIGRATION_DATABASE_URL } : {}),
     ...(value.DATABASE_CA_PATH ? { databaseCaPath: value.DATABASE_CA_PATH } : {}),
     ...(value.DATABASE_CA_PEM ? { databaseCaPem: value.DATABASE_CA_PEM.replaceAll("\\n", "\n") } : {}),
     ...(value.VALKEY_URL ? { valkeyUrl: value.VALKEY_URL } : {}),
