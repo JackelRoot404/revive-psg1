@@ -17,6 +17,8 @@ export function apiUrl(): string | null {
   );
 }
 
+export const releasePublicKeyPem = process.env.NEXT_PUBLIC_RELEASE_PUBLIC_KEY_PEM?.replaceAll("\\n", "\n").trim() || null;
+
 export function solanaRpcUrl(): string {
   return validUrl(
     process.env.NEXT_PUBLIC_SOLANA_RPC_URL,

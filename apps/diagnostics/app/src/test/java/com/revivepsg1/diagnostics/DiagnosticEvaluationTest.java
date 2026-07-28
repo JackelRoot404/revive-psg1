@@ -14,7 +14,7 @@ public final class DiagnosticEvaluationTest {
     }
 
     @Test
-    public void failedPlayCatalogProbeFailsClosed() {
+    public void missingConvenienceAppFailsClosed() {
         DiagnosticEvaluation result = new DiagnosticEvaluation(true, true, true, true, true, false, true);
         assertFalse(result.requiredCapabilitiesPass());
         assertTrue(result.toMachineJson().contains("\"playCatalog\":false"));

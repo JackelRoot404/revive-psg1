@@ -11,6 +11,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@noble/hashes": "^2.2.0",
     "@revive-psg1/contracts": "0.1.0",
     "@solana-program/memo": "0.11.2",
     "@solana-program/token": "0.13.0",
@@ -23,7 +24,7 @@
     "@yume-chan/adb-credential-web": "^2.1.0",
     "@yume-chan/adb-daemon-webusb": "^2.3.2",
     "bs58": "^6.0.0",
-    "next": "16.2.10",
+    "next": "^16.2.12",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -36,7 +37,7 @@
     "@types/react-dom": "^19.2.2",
     "@types/w3c-web-usb": "^1.0.14",
     "eslint": "^9.39.1",
-    "eslint-config-next": "16.2.10",
+    "eslint-config-next": "^16.2.12",
     "vite": "8.1.5",
     "vitest": "4.1.10"
   }

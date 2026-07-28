@@ -19,7 +19,7 @@ if (!Array.isArray(input.profileIds) || input.profileIds.length === 0) throw new
 if (!Array.isArray(input.artifacts) || input.artifacts.length === 0) throw new Error("artifacts must not be empty");
 
 const kinds = new Set(["system", "vbmeta", "apk", "recovery"]);
-const privateComponents = new Set(["android_system", "verified_boot", "recovery", "aurora_store", "fdroid", "retroarch", "diagnostics", "stock_restore"]);
+const privateComponents = new Set(["android_system", "verified_boot", "recovery", "aurora_store", "fdroid", "retroarch", "diagnostics", "diagnostics_test", "stock_restore"]);
 const ids = new Set();
 const objectKeys = new Set();
 const artifacts = [];
@@ -38,8 +38,13 @@ for (const source of input.artifacts) {
     artifacts.push({
       id: source.id, kind: source.kind, delivery: "private", component: source.component,
       objectKey: source.objectKey, size: stat.size, sha256: await sha256File(path),
-      ...(source.signerSha256 ? { signerSha256: requireSha256(source.signerSha256, `${source.id}.signerSha256`) } : {})
+      ...(source.signerSha256 ? { signerSha256: requireSha256(source.signerSha256, `${source.id}.signerSha256`) } : {}),
+      ...(source.packageName ? { packageName: requirePackageName(source.packageName, `${source.id}.packageName`) } : {}),
+      ...(source.versionName ? { versionName: requireVersionName(source.versionName, `${source.id}.versionName`) } : {})
     });
+    if (source.kind === "apk" && (!source.signerSha256 || !source.packageName || !source.versionName)) {
+      throw new Error(`APK ${source.id} requires signerSha256, packageName, and versionName`);
+    }
   } else if (source.delivery === "customer_supplied") {
     if (source.kind !== "system" || source.component !== "google_mobile_services") throw new Error(`Customer artifact ${source.id} must be the approved Play-enabled system image`);
     if ("objectKey" in source) throw new Error(`Customer artifact ${source.id} must not have an object key`);
@@ -104,4 +109,14 @@ function requireRegularFile(value, label) {
 function requireSha256(value, field) {
   if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) throw new Error(`${field} must be lowercase SHA-256`);
   return value;
+}
+
+function requirePackageName(value, field) {
+  if (typeof value !== "string" || !/^[a-z][a-z0-9_.]{2,150}$/.test(value)) throw new Error(`${field} must be an Android package name`);
+  return value;
+}
+
+function requireVersionName(value, field) {
+  if (typeof value !== "string" || value.trim() === "" || value.length > 120) throw new Error(`${field} must be a non-empty version name`);
+  return value.trim();
 }

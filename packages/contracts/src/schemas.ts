@@ -171,9 +171,16 @@ const artifactBaseSchema = z.object({
 
 export const privateFirmwareArtifactSchema = artifactBaseSchema.extend({
   delivery: z.literal("private"),
-  component: z.enum(["android_system", "verified_boot", "recovery", "aurora_store", "fdroid", "retroarch", "diagnostics", "stock_restore"]),
+  component: z.enum(["android_system", "verified_boot", "recovery", "aurora_store", "fdroid", "retroarch", "diagnostics", "diagnostics_test", "stock_restore"]),
   objectKey: z.string().min(1),
-  signerSha256: z.string().regex(/^[a-f0-9]{64}$/).optional()
+  signerSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  packageName: z.string().regex(/^[a-z][a-z0-9_.]{2,150}$/).optional(),
+  versionName: z.string().trim().min(1).max(120).optional()
+}).superRefine((artifact, context) => {
+  if (artifact.kind !== "apk") return;
+  if (!artifact.signerSha256) context.addIssue({ code: z.ZodIssueCode.custom, path: ["signerSha256"], message: "APK signer digest is required" });
+  if (!artifact.packageName) context.addIssue({ code: z.ZodIssueCode.custom, path: ["packageName"], message: "APK package name is required" });
+  if (!artifact.versionName) context.addIssue({ code: z.ZodIssueCode.custom, path: ["versionName"], message: "APK version name is required" });
 });
 
 export const customerSuppliedFirmwareArtifactSchema = artifactBaseSchema.extend({

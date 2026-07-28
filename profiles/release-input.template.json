@@ -29,7 +29,10 @@
       "delivery": "private",
       "component": "diagnostics",
       "path": "work/artifacts/revive-diagnostics.apk",
-      "objectKey": "private/releases/1.0.0-beta.1/revive-diagnostics.apk"
+      "objectKey": "private/releases/1.0.0-beta.1/revive-diagnostics.apk",
+      "packageName": "com.revivepsg1.diagnostics",
+      "versionName": "0.1.0",
+      "signerSha256": "REPLACE_WITH_PRODUCTION_SIGNER_SHA256"
     },
     {
       "id": "aurora-store-beta-1",
@@ -37,7 +40,21 @@
       "delivery": "private",
       "component": "aurora_store",
       "path": "work/artifacts/aurora-store.apk",
-      "objectKey": "private/releases/1.0.0-beta.1/aurora-store.apk"
+      "objectKey": "private/releases/1.0.0-beta.1/aurora-store.apk",
+      "packageName": "com.aurora.store",
+      "versionName": "REPLACE_WITH_REVIEWED_VERSION",
+      "signerSha256": "REPLACE_WITH_UPSTREAM_SIGNER_SHA256"
+    },
+    {
+      "id": "psg1-diagnostics-test-beta-1",
+      "kind": "apk",
+      "delivery": "private",
+      "component": "diagnostics_test",
+      "path": "work/artifacts/revive-diagnostics-test.apk",
+      "objectKey": "private/releases/1.0.0-beta.1/revive-diagnostics-test.apk",
+      "packageName": "com.revivepsg1.diagnostics.test",
+      "versionName": "0.1.0",
+      "signerSha256": "REPLACE_WITH_PRODUCTION_SIGNER_SHA256"
     },
     {
       "id": "retroarch-beta-1",
@@ -45,7 +62,10 @@
       "delivery": "private",
       "component": "retroarch",
       "path": "work/artifacts/retroarch.apk",
-      "objectKey": "private/releases/1.0.0-beta.1/retroarch.apk"
+      "objectKey": "private/releases/1.0.0-beta.1/retroarch.apk",
+      "packageName": "com.retroarch.aarch64",
+      "versionName": "REPLACE_WITH_REVIEWED_VERSION",
+      "signerSha256": "REPLACE_WITH_UPSTREAM_SIGNER_SHA256"
     }
   ]
 }

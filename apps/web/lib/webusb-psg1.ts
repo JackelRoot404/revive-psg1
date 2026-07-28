@@ -1,6 +1,7 @@
 import { Adb, AdbDaemonTransport } from "@yume-chan/adb";
 import AdbWebCredentialStore from "@yume-chan/adb-credential-web";
 import { AdbDaemonWebUsbDeviceManager } from "@yume-chan/adb-daemon-webusb";
+import { Consumable } from "@yume-chan/stream-extra";
 import { createAndroidSparseSegments } from "./android-sparse";
 
 export const ROCKCHIP_VENDOR_ID = 0x2207;
@@ -10,6 +11,8 @@ export type InstallationState = "stock_locked" | "stock_unlocked" | "already_mod
 
 export type WebCompatibilityScan = {
   deviceId: string;
+  /** Raw immutable serial is held locally only for cross-mode rechecks. */
+  bootloaderSerial: string;
   product: string;
   model: string;
   board: string;
@@ -38,7 +41,7 @@ export type WebCompatibilityScan = {
 };
 
 export type AdbCompatibilityScan = Omit<WebCompatibilityScan,
-  "deviceId" | "superPartitionBytes" | "serialVerified" | "immutableSerialVerified" | "fastbootUsbDescriptorVerified"
+  "deviceId" | "bootloaderSerial" | "superPartitionBytes" | "serialVerified" | "immutableSerialVerified" | "fastbootUsbDescriptorVerified"
 > & { bootloaderSerialCandidate: string };
 
 export class WebAdbPsg1 {
@@ -152,6 +155,50 @@ export class WebAdbPsg1 {
     }
   }
 
+  /** Upload, install, and inspect one release APK through a fixed ADB path. */
+  async installVerifiedApk(apk: Blob, expected: { packageName: string; versionName: string; signerSha256: string }): Promise<void> {
+    if (!/^[a-z][a-z0-9_.]{2,150}$/u.test(expected.packageName)
+      || !expected.versionName.trim()
+      || !/^[a-f0-9]{64}$/u.test(expected.signerSha256)) {
+      throw new Error("The signed APK metadata is invalid.");
+    }
+    const remotePath = `/data/local/tmp/revive-${expected.packageName.replaceAll(".", "-")}.apk`;
+    const sync = await this.adb.sync();
+    try {
+      const apkStream = apk.stream() as unknown as ConstructorParameters<typeof Consumable.WrapByteReadableStream>[0];
+      await sync.write({ filename: remotePath, file: new Consumable.WrapByteReadableStream(apkStream, 64 * 1024), permission: 0o644 });
+      const result = await this.adb.subprocess.noneProtocol.spawnWaitText(["pm", "install", "-r", "--user", "0", remotePath]);
+      if (!/^Success\b/mu.test(result)) throw new Error(`Android did not install ${expected.packageName}.`);
+      const details = await this.adb.subprocess.noneProtocol.spawnWaitText(["dumpsys", "package", expected.packageName]);
+      if (!new RegExp(`\\bversionName=${escapeRegex(expected.versionName)}\\b`, "u").test(details)) {
+        throw new Error(`${expected.packageName} has an unexpected installed version.`);
+      }
+      if (!new RegExp(`SHA256:\\s*${expected.signerSha256}`, "iu").test(details)) {
+        throw new Error(`${expected.packageName} has an unexpected signing certificate.`);
+      }
+    } finally {
+      await sync.dispose().catch(() => undefined);
+      await this.adb.rm(remotePath, { force: true }).catch(() => undefined);
+    }
+  }
+
+  async runDiagnostics(): Promise<void> {
+    const output = await this.adb.subprocess.noneProtocol.spawnWaitText([
+      "am", "instrument", "-w", "com.revivepsg1.diagnostics.test/androidx.test.runner.AndroidJUnitRunner"
+    ]);
+    if (!/(?:OK \(|REVIVE_DIAGNOSTICS_PASS)/u.test(output)) {
+      throw new Error("The PSG1 diagnostics did not report a pass.");
+    }
+  }
+
+  async rebootSystem(): Promise<void> {
+    try {
+      await this.adb.power.reboot();
+    } catch (cause) {
+      if (!isExpectedUsbDisconnect(cause)) throw cause;
+    }
+  }
+
   async close(): Promise<void> {
     await this.adb.close();
   }
@@ -213,6 +260,21 @@ export class WebFastbootPsg1 {
 
   async maxDownloadSize(): Promise<number> {
     return parseFastbootSize(await this.getVariable("max-download-size"));
+  }
+
+  async assertMode(expected: "bootloader" | "fastbootd"): Promise<void> {
+    const userspace = (await this.getVariable("is-userspace")).trim().toLowerCase() === "yes";
+    if (userspace !== (expected === "fastbootd")) {
+      throw new Error(`This PSG1 is in ${userspace ? "Fastbootd" : "bootloader Fastboot"}, but the next signed step requires ${expected === "fastbootd" ? "Fastbootd" : "bootloader Fastboot"}.`);
+    }
+  }
+
+  async assertIdentity(expectedSerial: string): Promise<void> {
+    const expected = normalizeSerial(expectedSerial);
+    const fastboot = normalizeSerial((await this.getVariable("serialno")) || this.normalizedUsbSerial);
+    if (!expected || fastboot !== expected || this.normalizedUsbSerial !== expected) {
+      throw new Error("The selected Fastboot interface is not the PSG1 authorized for this beta installation.");
+    }
   }
 
   async unlockVerifiedBoot(): Promise<void> {
@@ -348,6 +410,7 @@ export async function finalizeWebScan(
     bootloaderUnlocked,
     installationState: classifyInstallationState({ ...adbScan, bootloaderUnlocked }),
     deviceId: await deviceIdForSerial(fastbootSerial),
+    bootloaderSerial: fastbootSerial,
     superPartitionBytes,
     serialVerified: true,
     immutableSerialVerified: true,
@@ -439,3 +502,5 @@ function parseInteger(value: string): number {
   const parsed = Number.parseInt(value.trim(), 10);
   return Number.isFinite(parsed) ? parsed : 0;
 }
+
+function escapeRegex(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"); }

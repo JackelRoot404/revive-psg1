@@ -9,9 +9,8 @@
     <uses-feature android:name="android.hardware.fingerprint" android:required="false" />
 
     <queries>
-        <package android:name="com.android.vending" />
-        <package android:name="com.google.android.gms" />
-        <package android:name="com.google.android.gsf" />
+        <package android:name="com.aurora.store" />
+        <package android:name="com.retroarch.aarch64" />
     </queries>
 
     <application

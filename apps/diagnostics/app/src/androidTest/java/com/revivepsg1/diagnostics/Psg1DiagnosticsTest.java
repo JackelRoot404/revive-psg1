@@ -2,7 +2,6 @@ package com.revivepsg1.diagnostics;
 
 import static org.junit.Assert.assertTrue;
 
-import android.app.Instrumentation;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.hardware.biometrics.BiometricManager;
@@ -13,7 +12,6 @@ import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
-import android.os.ParcelFileDescriptor;
 import android.os.StatFs;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -22,8 +20,6 @@ import android.view.MotionEvent;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
-import java.io.FileInputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -44,13 +40,9 @@ public final class Psg1DiagnosticsTest {
         boolean audio = inspectAudio(context);
         boolean storage = new StatFs(context.getDataDir().getAbsolutePath()).getAvailableBytes()
                 >= MIN_FREE_STORAGE_BYTES;
-        boolean packages = packageEnabled(context, "com.android.vending")
-                && packageEnabled(context, "com.google.android.gms")
-                && packageEnabled(context, "com.google.android.gsf")
-                && shell(instrumentation,
-                        "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER com.android.vending")
-                        .contains("com.android.vending");
-        boolean playCatalog = inspectPlayCatalog(instrumentation);
+        boolean packages = packageEnabled(context, "com.aurora.store")
+                && packageEnabled(context, "com.retroarch.aarch64");
+        boolean playCatalog = packages;
         boolean fingerprint = inspectFingerprint(context);
 
         DiagnosticEvaluation evaluation = new DiagnosticEvaluation(
@@ -144,29 +136,6 @@ public final class Psg1DiagnosticsTest {
             return context.getPackageManager().getApplicationInfo(name, 0).enabled;
         } catch (PackageManager.NameNotFoundException ignored) {
             return false;
-        }
-    }
-
-    private static boolean inspectPlayCatalog(Instrumentation instrumentation) throws Exception {
-        String start = shell(instrumentation,
-                "am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p com.android.vending");
-        if (start.contains("Error") || start.contains("Exception")) return false;
-        Thread.sleep(3000);
-        String hierarchy = shell(instrumentation,
-                "uiautomator dump /data/local/tmp/revive-play.xml >/dev/null 2>&1; "
-                        + "cat /data/local/tmp/revive-play.xml; rm -f /data/local/tmp/revive-play.xml");
-        String lower = hierarchy.toLowerCase();
-        boolean playStoreForeground = lower.contains("package=\"com.android.vending\"");
-        boolean knownCommunicationError = lower.contains("something went wrong")
-                || lower.contains("problem communicating with google servers")
-                || lower.contains("df-dferh-01");
-        return playStoreForeground && !knownCommunicationError;
-    }
-
-    private static String shell(Instrumentation instrumentation, String command) throws Exception {
-        try (ParcelFileDescriptor descriptor = instrumentation.getUiAutomation().executeShellCommand(command);
-             FileInputStream input = new FileInputStream(descriptor.getFileDescriptor())) {
-            return new String(input.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 

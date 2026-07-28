@@ -3,9 +3,9 @@
 This Android 15 instrumentation APK emits a machine-readable capability report
 and fails closed when any required launch capability is missing. It checks the
 physical controller face/shoulder/menu keys, D-pad HAT axes and both analog
-sticks, validated Wi-Fi, audio output, free data storage, enabled Google
-packages, and a privacy-safe Play Store foreground/error-screen probe. It reports
-fingerprint availability but does not require it.
+sticks, validated Wi-Fi, audio output, free data storage, and the installed
+Aurora Store and RetroArch packages. It does not require Google Mobile Services
+or the Play Store. It reports fingerprint availability but does not require it.
 
 It never reads an account name, email address, credential, wallet, factory
 serial, Google Services Framework database, or account state.

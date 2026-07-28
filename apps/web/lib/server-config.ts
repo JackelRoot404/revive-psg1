@@ -15,3 +15,7 @@ export function isCompatibilityCheckerOnly(environment: NodeJS.ProcessEnv = proc
 export function isBetaBrowserInstallerEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
   return environment.NEXT_PUBLIC_BETA_BROWSER_INSTALLER === "true";
 }
+
+export function isDestructiveBrowserFlashingValidated(environment: NodeJS.ProcessEnv = process.env): boolean {
+  return environment.NEXT_PUBLIC_DESTRUCTIVE_BROWSER_FLASHING_VALIDATED === "true";
+}
