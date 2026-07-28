@@ -36,3 +36,17 @@ Production CI must generate dependency locks, verify them with
 `--write-locks`, sign the target APK with the offline release process, record
 its signer SHA-256 in the release manifest, and reject an output containing a
 debug certificate.
+
+Build both production-signed diagnostics APKs (the app and its instrumentation
+companion) with the local keystore values supplied only through the environment:
+
+```sh
+REVIVE_ANDROID_KEYSTORE_FILE=/secure/path/revive-android-release.jks \
+REVIVE_ANDROID_KEY_ALIAS=revive-android \
+REVIVE_ANDROID_STORE_PASSWORD='…' \
+REVIVE_ANDROID_KEY_PASSWORD='…' \
+node tools/build-diagnostics-release.mjs work/artifacts/diagnostics-release
+```
+
+The helper refuses unsigned output, re-signs the instrumentation companion with
+the same release key, and writes SHA-256/certificate evidence beside the APKs.
