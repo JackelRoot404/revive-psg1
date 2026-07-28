@@ -190,4 +190,18 @@ describe("public contracts", () => {
     expect(releaseManifestSchema.parse({ ...document, signature: "a".repeat(64) }).artifacts).toHaveLength(2);
     expect(document.artifacts.find((artifact: { id: string }) => artifact.id === "system")).not.toHaveProperty("objectKey");
   });
+
+  it("refuses a private Android-system manifest without release evidence", () => {
+    const directory = mkdtempSync(resolve(tmpdir(), "revive-beta-evidence-"));
+    const system = resolve(directory, "system.img");
+    writeFileSync(system, "synthetic-private-system-image");
+    const inputPath = resolve(directory, "release.json");
+    writeFileSync(inputPath, JSON.stringify({
+      releaseId: "00000000-0000-4000-8000-000000000000", version: "test", minimumInstallerVersion: "0.1.0",
+      profileIds: ["profile"], releaseNotes: "test", publishedAt: "2026-01-01T00:00:00.000Z", signingKeyId: "test-key",
+      artifacts: [{ id: "system", kind: "system", delivery: "private", component: "android_system", path: system, objectKey: "private/system.img" }]
+    }));
+    const builder = resolve(process.cwd(), "../../tools/build-release-manifest.mjs");
+    expect(() => execFileSync(process.execPath, [builder, inputPath], { encoding: "utf8" })).toThrow(/betaEvidencePath/);
+  });
 });

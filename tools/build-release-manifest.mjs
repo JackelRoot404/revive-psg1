@@ -85,7 +85,8 @@ const manifest = {
   artifacts: artifacts.sort((a, b) => a.id.localeCompare(b.id)),
   releaseNotes: input.releaseNotes,
   publishedAt,
-  signingKeyId: input.signingKeyId
+  signingKeyId: input.signingKeyId,
+  ...(requiresBetaEvidence(artifacts) ? { betaEvidence: validateBetaEvidence(input.betaEvidencePath, artifacts) } : {})
 };
 
 process.stderr.write(`Built unsigned manifest ${manifest.version} with ${artifacts.length} artifact(s) from ${basename(configPath)}\n`);
@@ -120,3 +121,37 @@ function requireVersionName(value, field) {
   if (typeof value !== "string" || value.trim() === "" || value.length > 120) throw new Error(`${field} must be a non-empty version name`);
   return value.trim();
 }
+
+function requiresBetaEvidence(artifacts) {
+  return artifacts.some((artifact) => artifact.delivery === "private" && artifact.component === "android_system");
+}
+
+function validateBetaEvidence(path, artifacts) {
+  if (typeof path !== "string" || path.trim() === "") throw new Error("Private Android-system releases require betaEvidencePath");
+  const evidence = JSON.parse(readFileSync(resolve(path), "utf8"));
+  const source = evidence?.source;
+  const license = evidence?.licenseReview;
+  const inspection = evidence?.noGmsInspection;
+  const validation = evidence?.stockPsg1Validation;
+  if (!source || !/^https:\/\//.test(source.releaseUrl ?? "") || !source.tag || !source.upstreamAssetName
+    || !isSha(source.upstreamArchiveSha256) || !isSha(source.expandedSystemSha256)) throw new Error("beta evidence source provenance is incomplete");
+  if (!license || license.status !== "approved" || !license.license || !license.reviewer || !validDate(license.reviewedAt) || !/^https:\/\//.test(license.evidenceUrl ?? "")) {
+    throw new Error("beta evidence requires an approved, attributable license review");
+  }
+  if (!inspection || !inspection.tool || !validDate(inspection.inspectedAt) || !Array.isArray(inspection.checkedPaths) || inspection.checkedPaths.length < 3
+    || !Array.isArray(inspection.detectedPackages) || inspection.detectedPackages.length !== 0 || !isSha(inspection.reportSha256)) {
+    throw new Error("beta evidence requires a passed no-GMS inspection report");
+  }
+  const checks = ["chromeWindows", "edgeWindows", "chromeMacos", "edgeMacos", "controls", "wifi", "audio", "storage", "auroraStore", "retroArch", "diagnostics", "twoColdBoots"];
+  if (!validation || validation.status !== "passed" || !validDate(validation.validatedAt) || !Number.isInteger(validation.stockUnitCount) || validation.stockUnitCount < 1 || checks.some((key) => validation[key] !== true)) {
+    throw new Error("beta evidence requires complete stock-PSG1 browser and hardware validation");
+  }
+  if (!evidence.artifactSha256 || typeof evidence.artifactSha256 !== "object") throw new Error("beta evidence is missing artifact hashes");
+  for (const artifact of artifacts) {
+    if (evidence.artifactSha256[artifact.id] !== artifact.sha256) throw new Error(`beta evidence does not match artifact ${artifact.id}`);
+  }
+  return evidence;
+}
+
+function isSha(value) { return typeof value === "string" && /^[a-f0-9]{64}$/.test(value); }
+function validDate(value) { return typeof value === "string" && Number.isFinite(Date.parse(value)); }

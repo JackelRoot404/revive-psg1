@@ -1,0 +1,48 @@
+{
+  "source": {
+    "releaseUrl": "https://github.com/MisterZtr/LineageOS_gsi/releases/tag/REPLACE_WITH_APPROVED_TAG",
+    "tag": "REPLACE_WITH_APPROVED_TAG",
+    "upstreamAssetName": "REPLACE_WITH_APPROVED_VANILLA_EXT4_ASSET",
+    "upstreamArchiveSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "expandedSystemSha256": "REPLACE_WITH_64_LOWERCASE_HEX"
+  },
+  "licenseReview": {
+    "status": "pending",
+    "license": "REPLACE_WITH_APPROVED_LICENSE",
+    "reviewer": "REPLACE_WITH_REVIEWER",
+    "reviewedAt": "2026-01-01T00:00:00.000Z",
+    "evidenceUrl": "https://REPLACE_WITH_LICENSE_EVIDENCE"
+  },
+  "noGmsInspection": {
+    "tool": "debugfs package-directory and package-manifest inspection",
+    "inspectedAt": "2026-01-01T00:00:00.000Z",
+    "checkedPaths": ["/system/app", "/system/priv-app", "/system_ext/priv-app", "/product/app", "/product/priv-app"],
+    "detectedPackages": [],
+    "reportSha256": "REPLACE_WITH_64_LOWERCASE_HEX"
+  },
+  "stockPsg1Validation": {
+    "status": "pending",
+    "validatedAt": "2026-01-01T00:00:00.000Z",
+    "stockUnitCount": 0,
+    "chromeWindows": false,
+    "edgeWindows": false,
+    "chromeMacos": false,
+    "edgeMacos": false,
+    "controls": false,
+    "wifi": false,
+    "audio": false,
+    "storage": false,
+    "auroraStore": false,
+    "retroArch": false,
+    "diagnostics": false,
+    "twoColdBoots": false
+  },
+  "artifactSha256": {
+    "psg1-system-beta-1": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "psg1-vbmeta-beta-1": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "psg1-diagnostics-beta-1": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "psg1-diagnostics-test-beta-1": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "aurora-store-beta-1": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "retroarch-beta-1": "REPLACE_WITH_64_LOWERCASE_HEX"
+  }
+}

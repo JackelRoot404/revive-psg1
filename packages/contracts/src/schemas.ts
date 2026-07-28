@@ -233,6 +233,42 @@ export const compatibilityProfileSchema = z.object({
   signature: z.string().min(64)
 });
 
+const betaEvidenceSchema = z.object({
+  source: z.object({
+    releaseUrl: z.string().url().refine((value) => new URL(value).protocol === "https:"),
+    tag: z.string().trim().min(1).max(160),
+    upstreamAssetName: z.string().trim().min(1).max(240),
+    upstreamArchiveSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    expandedSystemSha256: z.string().regex(/^[a-f0-9]{64}$/)
+  }).strict(),
+  licenseReview: z.object({
+    status: z.literal("approved"),
+    license: z.string().trim().min(1).max(160),
+    reviewer: z.string().trim().min(1).max(120),
+    reviewedAt: z.string().datetime(),
+    evidenceUrl: z.string().url().refine((value) => new URL(value).protocol === "https:")
+  }).strict(),
+  noGmsInspection: z.object({
+    tool: z.string().trim().min(1).max(160),
+    inspectedAt: z.string().datetime(),
+    checkedPaths: z.array(z.string().trim().min(1).max(500)).min(3).max(50),
+    detectedPackages: z.array(z.string()).max(0),
+    reportSha256: z.string().regex(/^[a-f0-9]{64}$/)
+  }).strict(),
+  stockPsg1Validation: z.object({
+    status: z.literal("passed"),
+    validatedAt: z.string().datetime(),
+    stockUnitCount: z.number().int().min(1),
+    chromeWindows: z.literal(true),
+    edgeWindows: z.literal(true),
+    chromeMacos: z.literal(true),
+    edgeMacos: z.literal(true),
+    controls: z.literal(true), wifi: z.literal(true), audio: z.literal(true), storage: z.literal(true),
+    auroraStore: z.literal(true), retroArch: z.literal(true), diagnostics: z.literal(true), twoColdBoots: z.literal(true)
+  }).strict(),
+  artifactSha256: z.record(z.string().min(1).max(100), z.string().regex(/^[a-f0-9]{64}$/))
+}).strict();
+
 export const releaseManifestSchema = z.object({
   releaseId: uuidSchema,
   channel: z.literal("stable"),
@@ -243,6 +279,7 @@ export const releaseManifestSchema = z.object({
   releaseNotes: z.string().max(8_000),
   publishedAt: z.string().datetime(),
   signingKeyId: z.string().min(1),
+  betaEvidence: betaEvidenceSchema.optional(),
   signature: z.string().min(64)
 });
 

@@ -6,6 +6,7 @@
   "releaseNotes": "Private beta release. Public sale is disabled.",
   "publishedAt": "2026-01-01T00:00:00.000Z",
   "signingKeyId": "release-beta-1",
+  "betaEvidencePath": "profiles/beta-release-evidence.template.json",
   "artifacts": [
     {
       "id": "psg1-system-beta-1",
