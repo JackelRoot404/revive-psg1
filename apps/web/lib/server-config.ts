@@ -19,3 +19,9 @@ export function isBetaBrowserInstallerEnabled(environment: NodeJS.ProcessEnv = p
 export function isDestructiveBrowserFlashingValidated(environment: NodeJS.ProcessEnv = process.env): boolean {
   return environment.NEXT_PUBLIC_DESTRUCTIVE_BROWSER_FLASHING_VALIDATED === "true";
 }
+
+// This is intentionally separate from the completed-validation gate. The API
+// still permits only its one database-backed hardware-pilot code in this mode.
+export function isHardwarePilotEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
+  return environment.NEXT_PUBLIC_HARDWARE_PILOT_ENABLED === "true";
+}

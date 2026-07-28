@@ -139,12 +139,21 @@ function validateBetaEvidence(path, artifacts) {
     throw new Error("beta evidence requires an approved, attributable license review");
   }
   if (!inspection || !inspection.tool || !validDate(inspection.inspectedAt) || !Array.isArray(inspection.checkedPaths) || inspection.checkedPaths.length < 3
-    || !Array.isArray(inspection.detectedPackages) || inspection.detectedPackages.length !== 0 || !isSha(inspection.reportSha256)) {
+    || !Array.isArray(inspection.detectedGmsPackages) || inspection.detectedGmsPackages.length !== 0
+    || !Array.isArray(inspection.reviewedNonGmsGooglePackages) || !isSha(inspection.reportSha256)) {
     throw new Error("beta evidence requires a passed no-GMS inspection report");
   }
   const checks = ["chromeWindows", "edgeWindows", "chromeMacos", "edgeMacos", "controls", "wifi", "audio", "storage", "auroraStore", "retroArch", "diagnostics", "twoColdBoots"];
-  if (!validation || validation.status !== "passed" || !validDate(validation.validatedAt) || !Number.isInteger(validation.stockUnitCount) || validation.stockUnitCount < 1 || checks.some((key) => validation[key] !== true)) {
-    throw new Error("beta evidence requires complete stock-PSG1 browser and hardware validation");
+  const fullyValidated = validation?.status === "passed" && validDate(validation.validatedAt)
+    && Number.isInteger(validation.stockUnitCount) && validation.stockUnitCount >= 1 && checks.every((key) => validation[key] === true);
+  const hardwarePilot = validation?.status === "pilot_pending"
+    && validDate(validation.plannedAt)
+    && validation.maxEnrollments === 1
+    && validation.discordSupervisionRequired === true
+    && validation.acknowledgement === "No stock PSG1 is available to the operator; this single destructive enrollment is the hardware-validation pilot."
+    && checks.every((key) => validation[key] === false);
+  if (!fullyValidated && !hardwarePilot) {
+    throw new Error("beta evidence requires complete stock-PSG1 validation or the explicit one-device hardware-pilot evidence");
   }
   if (!evidence.artifactSha256 || typeof evidence.artifactSha256 !== "object") throw new Error("beta evidence is missing artifact hashes");
   for (const artifact of artifacts) {

@@ -252,20 +252,42 @@ const betaEvidenceSchema = z.object({
     tool: z.string().trim().min(1).max(160),
     inspectedAt: z.string().datetime(),
     checkedPaths: z.array(z.string().trim().min(1).max(500)).min(3).max(50),
-    detectedPackages: z.array(z.string()).max(0),
+    // This is a GMS check, not a blanket ban on a package whose namespace
+    // happens to begin with com.google. Any such non-GMS package is recorded
+    // separately and must be reviewed before publication.
+    detectedGmsPackages: z.array(z.string()).max(0),
+    reviewedNonGmsGooglePackages: z.array(z.string().trim().min(1).max(240)).max(20),
     reportSha256: z.string().regex(/^[a-f0-9]{64}$/)
   }).strict(),
-  stockPsg1Validation: z.object({
-    status: z.literal("passed"),
-    validatedAt: z.string().datetime(),
-    stockUnitCount: z.number().int().min(1),
-    chromeWindows: z.literal(true),
-    edgeWindows: z.literal(true),
-    chromeMacos: z.literal(true),
-    edgeMacos: z.literal(true),
-    controls: z.literal(true), wifi: z.literal(true), audio: z.literal(true), storage: z.literal(true),
-    auroraStore: z.literal(true), retroArch: z.literal(true), diagnostics: z.literal(true), twoColdBoots: z.literal(true)
-  }).strict(),
+  // A release is normally published only after this complete validation set.
+  // The deliberately narrow alternative exists for one Discord-supervised
+  // stock-device pilot, never for a general beta cohort.
+  stockPsg1Validation: z.discriminatedUnion("status", [
+    z.object({
+      status: z.literal("passed"),
+      validatedAt: z.string().datetime(),
+      stockUnitCount: z.number().int().min(1),
+      chromeWindows: z.literal(true),
+      edgeWindows: z.literal(true),
+      chromeMacos: z.literal(true),
+      edgeMacos: z.literal(true),
+      controls: z.literal(true), wifi: z.literal(true), audio: z.literal(true), storage: z.literal(true),
+      auroraStore: z.literal(true), retroArch: z.literal(true), diagnostics: z.literal(true), twoColdBoots: z.literal(true)
+    }).strict(),
+    z.object({
+      status: z.literal("pilot_pending"),
+      plannedAt: z.string().datetime(),
+      maxEnrollments: z.literal(1),
+      discordSupervisionRequired: z.literal(true),
+      acknowledgement: z.literal("No stock PSG1 is available to the operator; this single destructive enrollment is the hardware-validation pilot."),
+      chromeWindows: z.literal(false),
+      edgeWindows: z.literal(false),
+      chromeMacos: z.literal(false),
+      edgeMacos: z.literal(false),
+      controls: z.literal(false), wifi: z.literal(false), audio: z.literal(false), storage: z.literal(false),
+      auroraStore: z.literal(false), retroArch: z.literal(false), diagnostics: z.literal(false), twoColdBoots: z.literal(false)
+    }).strict()
+  ]),
   artifactSha256: z.record(z.string().min(1).max(100), z.string().regex(/^[a-f0-9]{64}$/))
 }).strict();
 

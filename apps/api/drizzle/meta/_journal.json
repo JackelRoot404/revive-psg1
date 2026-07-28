@@ -71,6 +71,13 @@
       "when": 1785209000000,
       "tag": "0009_discord_browser_beta",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785291000000,
+      "tag": "0010_hardware_pilot_invite",
+      "breakpoints": true
     }
   ]
 }

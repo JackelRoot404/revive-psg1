@@ -61,6 +61,11 @@ describe("local configuration", () => {
     expect(loadConfig({ NODE_ENV: "development", BETA_BROWSER_INSTALLER: "true" }).betaBrowserInstaller).toBe(true);
   });
 
+  it("keeps the one-device hardware pilot opt-in", () => {
+    expect(loadConfig({ NODE_ENV: "development" }).betaHardwarePilotEnabled).toBe(false);
+    expect(loadConfig({ NODE_ENV: "development", BETA_HARDWARE_PILOT_ENABLED: "true" }).betaHardwarePilotEnabled).toBe(true);
+  });
+
   it("refuses the deterministic hardware fixture in production", () => {
     expect(() => loadConfig({ ...production, REVIVE_DEV_HARDWARE_FIXTURE: "true" })).toThrow(/forbidden in production/i);
   });

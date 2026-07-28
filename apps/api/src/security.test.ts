@@ -8,7 +8,7 @@ const config: Config = {
   licenseKeyId: "test", solanaRpcPrimary: "http://localhost:8899",
   treasuryWallet: "EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y", spacesRegion: "nyc3", spacesBucket: "test",
   crashReportsEnabled: true, earlyAccessFree: true, developmentHardwareFixture: false, publicSalesEnabled: false,
-  compatibilityCheckerOnly: true, betaBrowserInstaller: false
+  compatibilityCheckerOnly: true, betaBrowserInstaller: false, betaHardwarePilotEnabled: false
 };
 
 describe("TokenService", () => {

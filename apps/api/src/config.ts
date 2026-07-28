@@ -28,7 +28,10 @@ const environmentSchema = z.object({
   REVIVE_DEV_HARDWARE_FIXTURE: z.string().default("false").transform((value) => value === "true"),
   PUBLIC_SALES_ENABLED: z.string().default("false").transform((value) => value === "true"),
   COMPATIBILITY_CHECKER_ONLY: z.string().default("true").transform((value) => value === "true"),
-  BETA_BROWSER_INSTALLER: z.string().default("false").transform((value) => value === "true")
+  BETA_BROWSER_INSTALLER: z.string().default("false").transform((value) => value === "true"),
+  // This does not open the beta cohort. It merely permits the one
+  // database-backed hardware-pilot invite for a signed pilot-pending release.
+  BETA_HARDWARE_PILOT_ENABLED: z.string().default("false").transform((value) => value === "true")
 });
 
 export type Config = {
@@ -59,6 +62,7 @@ export type Config = {
   publicSalesEnabled: boolean;
   compatibilityCheckerOnly: boolean;
   betaBrowserInstaller: boolean;
+  betaHardwarePilotEnabled: boolean;
 };
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Config {
@@ -110,6 +114,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Config
     developmentHardwareFixture: value.REVIVE_DEV_HARDWARE_FIXTURE,
     publicSalesEnabled: value.PUBLIC_SALES_ENABLED,
     compatibilityCheckerOnly: value.COMPATIBILITY_CHECKER_ONLY,
-    betaBrowserInstaller: value.BETA_BROWSER_INSTALLER
+    betaBrowserInstaller: value.BETA_BROWSER_INSTALLER,
+    betaHardwarePilotEnabled: value.BETA_HARDWARE_PILOT_ENABLED
   };
 }

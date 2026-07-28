@@ -20,27 +20,27 @@ The marketing site can go live while checkout and destructive installation remai
 - [ ] Require the exact wipe/security confirmation immediately before marking `installation_started_at`.
 - [ ] Verify signed profile, release manifest, vbmeta, system image, and every APK before modification.
 - [ ] Test cable disconnect, tab close, browser crash, expired installer token, low battery, insufficient browser storage, wrong device, and device swap.
-- [ ] Test two cold boots, controls, Wi-Fi, audio, storage, Aurora Store, F-Droid, RetroArch, and fingerprint detection.
+- [ ] Test two cold boots, controls, Wi-Fi, audio, storage, Aurora Store, RetroArch, diagnostics, and fingerprint detection.
 - [ ] Obtain and test a lawful Google Play distribution path before advertising Play Store. Until then, do not distribute GMS.
-- [ ] Build and test a device restoration path. Public destructive testing remains blocked without a verified recovery artifact.
+- [ ] Record the irreversible-risk acknowledgement and exact `ERASE PSG1` confirmation. No echOS recovery artifact is provided.
 
-## Payment and wallet testing
+## Code and entitlement testing
 
 - [ ] Complete injected-extension E2E with current Phantom and Solflare.
 - [ ] Verify a copied or expired browser session cannot authorize another PSG1.
-- [ ] Verify wrong wallet, wrong USDC mint, wrong amount, reused reference, reused transaction, and non-finalized payment all fail.
-- [ ] Verify the post-payment installer challenge can only be signed by the receipt wallet and cannot be replayed.
-- [ ] Use device-bound private beta invites for the first ten testers; do not require beta testers to send mainnet funds.
+- [ ] Verify expired/reused codes, device swaps, duplicate device entitlements, and the 25th/26th redemption boundary fail.
+- [ ] Verify browser-session and installer tokens cannot be replayed on another PSG1.
+- [ ] Use the single database-backed hardware-pilot code first when stock validation is pending; issue cohort codes only after its evidence passes.
 
 ## Ten-device safety beta
 
-- [ ] Recruit ten independent PSG1 owners through Discord and X.
+- [ ] Recruit up to 25 independent PSG1 owners through Discord.
 - [ ] Run the free scan first and issue an invite only after the firmware profile is supported.
 - [ ] Confirm the bootloader serial is present and unique across all ten devices.
 - [ ] Retain only hashed device IDs and redacted reports.
-- [ ] Supervise every destructive beta installation and keep a recovery operator available.
-- [ ] Stop enrollment immediately if any device remains unrecovered.
-- [ ] Do not enable 19 USDC public sales until all launch gates have reviewed evidence.
+- [ ] Supervise every destructive beta installation in its Discord ticket.
+- [ ] Stop enrollment immediately after any failed or unknown device state.
+- [ ] Keep public sales disabled permanently; this beta is free.
 
 ## Operations
 

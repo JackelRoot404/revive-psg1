@@ -1,5 +1,5 @@
 import { Wizard } from "./wizard";
-import { isBetaBrowserInstallerEnabled, isCompatibilityCheckerOnly, isDestructiveBrowserFlashingValidated, isDevelopmentHardwareFixtureEnabled } from "../../lib/server-config";
+import { isBetaBrowserInstallerEnabled, isCompatibilityCheckerOnly, isDestructiveBrowserFlashingValidated, isDevelopmentHardwareFixtureEnabled, isHardwarePilotEnabled } from "../../lib/server-config";
 
 export const metadata = {
   title: "PSG1 browser beta",
@@ -12,5 +12,6 @@ export default function WizardPage() {
     compatibilityCheckerOnly={isCompatibilityCheckerOnly()}
     betaBrowserInstaller={isBetaBrowserInstallerEnabled()}
     destructiveBrowserFlashingValidated={isDestructiveBrowserFlashingValidated()}
+    hardwarePilotEnabled={isHardwarePilotEnabled()}
   /></main>;
 }

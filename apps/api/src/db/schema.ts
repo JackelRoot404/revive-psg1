@@ -132,6 +132,9 @@ export const betaInvites = pgTable("beta_invites", {
   // transaction binds it to its first supported physical PSG1.
   deviceId: varchar("device_id", { length: 64 }),
   label: varchar("label", { length: 120 }),
+  // `hardware_pilot` has a database uniqueness constraint: only a single
+  // unvalidated destructive hardware pilot can ever be issued.
+  kind: varchar("kind", { length: 32 }).notNull().default("cohort"),
   enabled: boolean("enabled").notNull().default(true),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
@@ -140,6 +143,7 @@ export const betaInvites = pgTable("beta_invites", {
 }, (table) => [
   uniqueIndex("beta_invites_token_uq").on(table.tokenDigest),
   uniqueIndex("beta_invites_device_uq").on(table.deviceId).where(sql`${table.deviceId} is not null`),
+  uniqueIndex("beta_invites_hardware_pilot_once_uq").on(table.kind).where(sql`${table.kind} = 'hardware_pilot'`),
   uniqueIndex("beta_invites_order_uq").on(table.redeemedOrderId)
 ]);
 

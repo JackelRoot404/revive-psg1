@@ -358,7 +358,8 @@ export async function buildApp(dependencies: Dependencies) {
     if (session.channel !== "web" || auth.sub !== session.pairingPublicKey) return reply.code(403).send({ code: "WEB_PAIRING_REQUIRED" });
     const state = (session.compatibility as { installationState?: string }).installationState;
     if (state !== "stock_locked") return reply.code(409).send({ code: "DESTRUCTIVE_TEST_MODE_BLOCKED" });
-    if (!await betaReleaseReady(db, config)) return reply.code(503).send({ code: "BETA_RELEASE_NOT_READY" });
+    const releaseReadiness = await betaReleaseReadiness(db, config);
+    if (!releaseReadiness) return reply.code(503).send({ code: "BETA_RELEASE_NOT_READY" });
     await enforceDistributedLimit(redis, `beta-code:ip:${request.ip}`, 10, 60 * 60);
     await enforceDistributedLimit(redis, `beta-code:device:${session.deviceId}`, 5, 60 * 60);
 
@@ -379,8 +380,9 @@ export async function buildApp(dependencies: Dependencies) {
             gt(betaInvites.expiresAt, new Date()),
             isNull(betaInvites.redeemedAt),
             isNull(betaInvites.deviceId)
-          )).returning({ id: betaInvites.id });
-          if (!boundInvite.length) throw apiError("BETA_INVITE_INVALID_OR_USED", 409);
+          )).returning({ id: betaInvites.id, kind: betaInvites.kind });
+          const expectedInviteKind = releaseReadiness === "pilot" ? "hardware_pilot" : "cohort";
+          if (!boundInvite.length || boundInvite[0]!.kind !== expectedInviteKind) throw apiError("BETA_INVITE_INVALID_OR_USED", 409);
           await tx.insert(promoCodes).values({
             codeHash: sha256(BETA_PROMO_CODE), label: "Discord browser beta", maxRedemptions: BETA_PROMO_LIMIT
           }).onConflictDoNothing();
@@ -1208,11 +1210,14 @@ function isLegacyCommerceOrRecoveryPath(url: string): boolean {
     || /^\/v1\/devices\/[^/]+\/entitlement\/(?:claim|recover)(?:\/|$)/u.test(pathname);
 }
 
-async function betaReleaseReady(db: Database, config: Config): Promise<boolean> {
+async function betaReleaseReadiness(db: Database, config: Config): Promise<"full" | "pilot" | null> {
   const [release] = await db.select().from(releases).where(and(eq(releases.channel, "stable"), eq(releases.active, true))).orderBy(desc(releases.publishedAt)).limit(1);
-  if (!release || !verifySignedDocument(release.signedManifest, release.signature, config.releasePublicKeyPem)) return false;
+  if (!release || !verifySignedDocument(release.signedManifest, release.signature, config.releasePublicKeyPem)) return null;
   const manifest = releaseManifestSchema.safeParse({ ...(release.signedManifest as object), signature: release.signature });
-  return manifest.success && betaManifestEvidenceReady(manifest.data);
+  if (!manifest.success || !betaManifestEvidenceReady(manifest.data)) return null;
+  if (manifest.data.betaEvidence?.stockPsg1Validation.status === "passed") return "full";
+  if (config.betaHardwarePilotEnabled && manifest.data.betaEvidence?.stockPsg1Validation.status === "pilot_pending") return "pilot";
+  return null;
 }
 
 function betaManifestEvidenceReady(manifest: { betaEvidence?: { artifactSha256: Record<string, string> } | undefined; artifacts: Array<{ id: string; sha256: string; delivery: string; component: string }> }): boolean {

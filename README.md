@@ -13,17 +13,16 @@ Self-service software for converting a compatible PlaySolana PSG1 into a general
 - Browser Fastboot transport supports the guarded download protocol and fails closed until the exact signed artifact and hardware download-window are validated.
 - Journaled allowlisted installer engine for `fastboot oem at-unlock-vboot`, validated fastbootd, vbmeta/system flashing, wipe, and reboot.
 - Resume-capable, three-attempt artifact downloads with size and SHA-256 verification.
-- Refund cutoff recorded immediately before destructive work, plus pre-modification refund requests.
-- Netlify landing page, checkout, docs, privacy, and terms.
+- Versioned irreversible-risk acknowledgement recorded immediately before destructive work.
+- Netlify landing page, beta wizard, docs, privacy, and terms.
 - DigitalOcean App Platform, PostgreSQL, Valkey, and Spaces configuration surfaces.
 
 ## Product limitations
 
 - The PSG1 remains bootloader-unlocked after conversion, and no echOS restoration image is provided. Conversion may be irreversible.
 - The device/ROM is not Google-certified; Play Integrity, banking, DRM, and some games may refuse to run.
-- Revive does not distribute, proxy, or host an unlicensed Play-enabled Android image. Every accepted customer-supplied artifact must match an exact signed release hash.
+- Revive mirrors a reviewed, signed-manifest GMS-free system image and verified convenience APKs; it does not distribute Google Mobile Services or Play Store.
 - Fingerprint is currently unvalidated and not guaranteed, so it is not a launch feature.
-- echOS restoration depends on a verified official image for the matching PSG1 variant.
 - Universal Android application compatibility is not promised.
 
 ## Repository
@@ -60,7 +59,7 @@ REVIVE_DEV_HARDWARE_FIXTURE=true npm run dev:api
 REVIVE_DEV_HARDWARE_FIXTURE=true npm run dev:web
 ```
 
-Open `http://localhost:3000/wizard` and choose **Simulate stock PSG1**. The fixture exercises session creation, free entitlement, and release authorization without USB hardware. It uses a fixed fake device ID, returns no artifacts, rejects the destructive installation boundary, and is refused by production configuration. It is a software-flow test only; it cannot replace a real stock-hardware flashing and recovery test.
+Open `http://localhost:3000/wizard` and choose **Simulate stock PSG1**. The fixture exercises session creation, free entitlement, and release authorization without USB hardware. It uses a fixed fake device ID, returns no artifacts, rejects the destructive installation boundary, and is refused by production configuration. It is a software-flow test only; it cannot replace real stock-hardware flashing validation.
 
 ## Verification
 
@@ -85,8 +84,6 @@ See the [tester launch checklist](docs/tester-launch-checklist.md), [devnet paym
 
 The browser beta remains closed until both `BETA_BROWSER_INSTALLER=true` on the API and `NEXT_PUBLIC_BETA_BROWSER_INSTALLER=true` on Netlify are enabled. Public sales remain disabled. Testers redeem a one-time Discord `rpb_…` code that binds to their first supported PSG1.
 
-The optional-donation treasury is fixed to `EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y`. No treasury private key is needed or accepted by this system.
-
 ## Signing a profile or manifest
 
 Keep the offline Ed25519 private key on an isolated signing machine. The helper writes the signed envelope to stdout and never writes the key:
@@ -97,7 +94,7 @@ REVIVE_OFFLINE_SIGNING_KEY_PEM="$(security find-generic-password -w -s revive-re
   > psg1-rk3588s-v11-api35-v1.signed.json
 ```
 
-The checked-in profile is only a source template. The current `playsolana/.*/PSG1:15/.*` pattern is intentionally broad for the public read-only compatibility checker; it does not by itself certify that every matching build is safe to unlock or flash. Narrow or split profiles only after read-only partition, bootloader, vendor, serial-uniqueness, controls, Wi-Fi, audio, storage, fingerprint, and restoration validation.
+The checked-in profile is only a source template. The current `playsolana/.*/PSG1:15/.*` pattern is intentionally broad for the public read-only compatibility checker; it does not by itself certify that every matching build is safe to unlock or flash. Narrow or split profiles only after read-only partition, bootloader, vendor, serial-uniqueness, controls, Wi-Fi, audio, storage, and fingerprint validation.
 
 Insert or refresh a signed profile in PostgreSQL with:
 

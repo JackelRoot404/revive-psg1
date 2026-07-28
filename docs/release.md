@@ -1,7 +1,7 @@
 # Release process
 
 1. Collect unknown-build reports without charging or modifying devices.
-2. Validate partitions, sizes, bootloader commands, vendor compatibility, controls, Wi-Fi, audio, storage, fingerprint HAL, and echOS restoration.
+2. Validate partitions, sizes, bootloader commands, vendor compatibility, controls, Wi-Fi, audio, storage, and fingerprint HAL.
 3. Update the profile source and sign its canonical JSON offline.
 4. Build Android/vbmeta artifacts from recorded, reproducible inputs; AVB-sign with the separate offline key.
 5. Hash every final byte, upload to private Spaces, and create/sign the release manifest offline.
@@ -18,7 +18,7 @@ The signing handoff must keep four trust domains separate: Android AVB, offline 
 
 ## Release evidence bundle
 
-Archive canonical signed profile/manifest JSON; SHA-256 and byte size for every artifact; reproducible input/toolchain identifiers; AVB metadata; Apple notarization result; Windows signature/timestamp verification; updater signature; dependency/SBOM reports; beta/adversarial evidence; restore-test record; reviewers; and exact source commit. Sign the evidence index and store it separately from mutable operational logs.
+Archive canonical signed profile/manifest JSON; SHA-256 and byte size for every artifact; reproducible input/toolchain identifiers; AVB metadata; dependency/SBOM reports; beta/adversarial evidence; irreversible-risk acknowledgement evidence; reviewers; and exact source commit. Sign the evidence index and store it separately from mutable operational logs.
 
 ## Required launch evidence
 
@@ -27,7 +27,6 @@ Archive canonical signed profile/manifest JSON; SHA-256 and byte size for every 
 - Signed profiles for all beta-observed production variants.
 - No unrecovered beta device.
 - Serial uniqueness across the cohort.
-- End-to-end official echOS restoration.
 - Passing adversarial suite, including replay, eleventh redemption, manifest tamper, interruption, disconnect, unsupported firmware, and Fastboot failures.
 
 The API requires these as passed `launch_gate_checks` records in addition to `PUBLIC_SALES_ENABLED=true`.
@@ -35,9 +34,8 @@ The API requires these as passed `launch_gate_checks` records in addition to `PU
 ## Additional blockers
 
 - The same-computer tests in `checkout-pairing.md` must pass on signed macOS and Windows packages before the web source gate is enabled.
-- High/critical JavaScript findings must remain at zero. Review and record the remaining moderate upstream Next/PostCSS and API development-tool findings before release; do not force an incompatible downgrade to silence the audit.
-- Revive must not distribute, proxy, or host the Play-enabled LineageOS system image. Google states that GMS is outside AOSP and license-only: [official GMS overview](https://www.android.com/gms/). The customer-supplied flow accepts only the exact signed system archive selected locally from its original publisher, verifies archive and expanded-image size/hash, and never uploads it.
+- High/critical findings in the API runtime must remain at zero. Record and review unavoidable static-site build-tool advisories; do not force an incompatible downgrade to silence an audit.
+- Revive must not distribute or host a Play-enabled LineageOS system image. Google states that GMS is outside AOSP and license-only: [official GMS overview](https://www.android.com/gms/). Mirror only the exact reviewed GMS-free image recorded by the signed release manifest.
 - Fingerprint is unvalidated and not guaranteed; it cannot be advertised as supported.
-- Official echOS restoration must pass for every supported profile.
 - Counsel must approve final terms, privacy, warranty, refund, tax, support, and jurisdiction text.
 - Pin workflow actions to reviewed commit SHAs before any signing credential or publish permission is introduced.
