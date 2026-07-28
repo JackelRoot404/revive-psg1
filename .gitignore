@@ -56,3 +56,6 @@ apps/api/drizzle.config.d.ts
 /work/
 .tauri-signing/
 .secrets/
+
+# Local Netlify folder
+.netlify

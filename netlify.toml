@@ -1,6 +1,7 @@
 [build]
   command = "npm run build -w @revive-psg1/web"
-  publish = "apps/web/.next"
+  # Netlify resolves this relative to the selected monorepo app (apps/web).
+  publish = ".next"
 
 [build.environment]
   NODE_VERSION = "22"
