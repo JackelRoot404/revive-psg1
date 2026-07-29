@@ -1,7 +1,7 @@
 [build]
   command = "npm run build -w @revive-psg1/web"
-  # Netlify resolves this relative to the selected monorepo app (apps/web).
-  publish = "out"
+  # The build runs from the repository root; Next exports the static site here.
+  publish = "apps/web/out"
 
 [build.environment]
   NODE_VERSION = "22"

@@ -18,7 +18,7 @@ const API = apiUrl();
 const WEB_VERSION = "0.3.0-browser-beta";
 const DISCORD_URL = "https://discord.gg/NqE4UeqbEM";
 
-type Stage = "intro" | "adb" | "bootloader" | "fastbootReady" | "fastboot" | "session" | "unsupported" | "betaCode" | "activating" | "ready" | "preparing" | "risk" | "install";
+type Stage = "intro" | "adb" | "bootloader" | "fastbootWaiting" | "fastbootReady" | "fastboot" | "session" | "unsupported" | "betaCode" | "activating" | "ready" | "preparing" | "risk" | "install";
 type AdbCompatibilityScan = Awaited<ReturnType<WebAdbPsg1["readCompatibility"]>>;
 type Session = { sessionId: string; supported: boolean; browserToken: string; profileId: string | null; expiresAt: string; installationState: WebCompatibilityScan["installationState"] };
 type ReleaseArtifact = DownloadArtifact & { kind: "system" | "vbmeta" | "apk" | "recovery"; component: "android_system" | "verified_boot" | "diagnostics" | "diagnostics_test" | "aurora_store" | "retroarch"; delivery: "private"; signerSha256?: string; packageName?: string; versionName?: string };
@@ -60,7 +60,14 @@ export function Wizard({ developmentHardwareFixture, compatibilityCheckerOnly, b
       const snapshot = await adb.readCompatibility();
       if (!snapshot.usbStable) throw new Error("The PSG1 USB connection was not stable enough for a safe scan.");
       setPendingFastboot({ snapshot }); setStage("bootloader"); rebootStarted = true;
-      await adb.rebootBootloader(); adb = null; setStage("fastbootReady");
+      await adb.rebootBootloader();
+      adb = null;
+      // ADB disconnects before Windows has necessarily enumerated the new
+      // Fastboot interface. Waiting here prevents an immediately opened
+      // WebUSB chooser from appearing empty on slower hosts.
+      setStage("fastbootWaiting");
+      await waitForFastbootEnumeration();
+      setStage("fastbootReady");
     } catch (cause) {
       setError(messageOf(cause)); setStage(rebootStarted ? "fastbootReady" : "intro");
     } finally {
@@ -83,7 +90,7 @@ export function Wizard({ developmentHardwareFixture, compatibilityCheckerOnly, b
       setPendingFastboot(null);
       setStage(created.supported ? (betaOpen ? "betaCode" : "unsupported") : "unsupported");
     } catch (cause) {
-      setError(messageOf(cause)); setStage(fastboot ? "intro" : "fastbootReady");
+      setError(messageOf(cause)); setStage("fastbootReady");
     } finally { await fastboot?.close().catch(() => undefined); }
   }
 
@@ -195,6 +202,7 @@ export function Wizard({ developmentHardwareFixture, compatibilityCheckerOnly, b
     {stage === "intro" && <div className="wizard-step"><Step number={1} title="Read-only hardware scan" /><p>Connect the powered-on PSG1 with USB debugging authorized. Chrome or Edge will ask you to select it again after rebooting to Fastboot.</p><button className="button primary wide" disabled={!browserReady || !API} onClick={scanDevice}>Connect and scan PSG1</button><small>Use Chrome or Edge on macOS or Windows with a data-capable cable.</small>{developmentHardwareFixture && <button className="button ghost wide" disabled={!API} onClick={simulateStockDevice}>Simulate stock PSG1</button>}</div>}
     {stage === "adb" && <Progress title="Reading the PSG1 identity and safety preflight…" />}
     {stage === "bootloader" && <Progress title="Restarting the PSG1 into Fastboot…" />}
+    {stage === "fastbootWaiting" && <Progress title="Waiting for the PSG1 Fastboot USB interface…" />}
     {stage === "fastbootReady" && <div className="wizard-step"><Step number={2} title="Select Fastboot PSG1" /><p>The handheld restarted. Select its Fastboot interface in the next browser prompt.</p><button className="button primary wide" onClick={continueFastbootScan}>Select Fastboot PSG1</button></div>}
     {stage === "fastboot" && <Progress title="Cross-checking the immutable PSG1 identity…" />}
     {stage === "session" && <Progress title="Checking the signed compatibility profile…" />}
@@ -250,7 +258,19 @@ const ERROR_MESSAGES: Record<string, string> = {
   BETA_ENTITLEMENT_NOT_FOUND: "This PSG1 does not have an active beta entitlement yet.",
   DESTRUCTIVE_TEST_MODE_BLOCKED: "Destructive installation is blocked for modified or simulated devices.", UNSUPPORTED_FIRMWARE: "This firmware is not supported. No modification was performed."
 };
-function messageOf(cause: unknown) { return cause instanceof Error ? cause.message : "Request failed"; }
+function messageOf(cause: unknown): string {
+  if (cause instanceof DOMException && cause.name === "NotFoundError") {
+    return "No PSG1 Fastboot device was selected. Keep the cable connected, wait a few seconds for Fastboot to appear, then try again.";
+  }
+  const message = cause instanceof Error ? cause.message : "Request failed";
+  if (/failed to execute ['"]open['"] on ['"]usbdevice['"]: access denied|access denied/iu.test(message)) {
+    const setup = /Windows/iu.test(navigator.userAgent)
+      ? "Windows Fastboot driver setup is required before retrying."
+      : "Fastboot USB driver or permission setup is required before retrying.";
+    return `The computer detected the PSG1 Fastboot interface but could not open it. No device change was made. ${setup}`;
+  }
+  return message;
+}
 function requiredBetaArtifacts(artifacts: ReleaseArtifact[]): ReleaseArtifact[] {
   const required = ["android_system", "verified_boot", "diagnostics", "diagnostics_test", "aurora_store", "retroarch"] as const;
   const selected = required.map((component) => artifacts.find((artifact) => artifact.delivery === "private" && artifact.component === component));
@@ -288,5 +308,9 @@ function installInstruction(step: InstallUiStep): string {
 function installButton(step: InstallUiStep): string {
   return step === "start" ? "Start signed installation" : step === "complete" ? "Complete" : "Select same PSG1 and continue";
 }
+function waitForFastbootEnumeration(): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, 7_000));
+}
+
 function base64Url(bytes: Uint8Array) { return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", ""); }
 function browserCapabilitySnapshot() { return typeof navigator !== "undefined" && WebAdbPsg1.supported() && WebFastbootPsg1.supported(); }
