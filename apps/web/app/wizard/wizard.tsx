@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import {
   DEVELOPMENT_FIXTURE_COMPATIBILITY,
   DEVELOPMENT_FIXTURE_DEVICE_ID,
@@ -41,7 +41,11 @@ export function Wizard({ developmentHardwareFixture, compatibilityCheckerOnly, b
   const [installStep, setInstallStep] = useState<InstallUiStep>("start");
   const [installStatus, setInstallStatus] = useState("");
   const [error, setError] = useState("");
-  const browserReady = useSyncExternalStore(subscribeBrowserCapability, browserCapabilitySnapshot, () => false);
+  // WebUSB can only be inspected in the browser. Do this after hydration:
+  // subscribing to `load` alone is racy because React may attach the
+  // subscription after the page's load event has already fired.
+  const [browserReady, setBrowserReady] = useState(false);
+  useEffect(() => { setBrowserReady(browserCapabilitySnapshot()); }, []);
   const betaOpen = betaBrowserInstaller && !compatibilityCheckerOnly;
   const destructiveBrowserFlashingEnabled = destructiveBrowserFlashingValidated || hardwarePilotEnabled;
   const hardwarePilot = hardwarePilotEnabled && !destructiveBrowserFlashingValidated;
@@ -285,5 +289,4 @@ function installButton(step: InstallUiStep): string {
   return step === "start" ? "Start signed installation" : step === "complete" ? "Complete" : "Select same PSG1 and continue";
 }
 function base64Url(bytes: Uint8Array) { return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", ""); }
-function subscribeBrowserCapability(onStoreChange: () => void) { window.addEventListener("load", onStoreChange); return () => window.removeEventListener("load", onStoreChange); }
 function browserCapabilitySnapshot() { return typeof navigator !== "undefined" && WebAdbPsg1.supported() && WebFastbootPsg1.supported(); }
