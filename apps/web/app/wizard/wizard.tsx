@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   DEVELOPMENT_FIXTURE_COMPATIBILITY,
@@ -49,6 +50,7 @@ export function Wizard({ developmentHardwareFixture, compatibilityCheckerOnly, b
   const betaOpen = betaBrowserInstaller && !compatibilityCheckerOnly;
   const destructiveBrowserFlashingEnabled = destructiveBrowserFlashingValidated || hardwarePilotEnabled;
   const hardwarePilot = hardwarePilotEnabled && !destructiveBrowserFlashingValidated;
+  const needsWindowsFastbootSetup = error.includes("Windows Fastboot driver setup is required");
 
   async function scanDevice() {
     if (!browserReady || !API) return;
@@ -214,6 +216,7 @@ export function Wizard({ developmentHardwareFixture, compatibilityCheckerOnly, b
     {stage === "risk" && <div className="wizard-step"><Step number={4} title="Irreversible installation" /><div className="warning"><strong>No echOS recovery image is provided.</strong><p>This process erases all data, leaves the bootloader unlocked, may make restoration impossible, and can leave the device unusable. Keep your Discord support ticket open.</p></div><p className="success">✓ {artifactStatus || "Signed beta artifacts verified"}</p><label className="checkbox"><input type="checkbox" checked={riskAccepted} onChange={(event) => setRiskAccepted(event.target.checked)} /> I understand and accept the irreversible beta risks.</label><label className="field">Type <b>ERASE PSG1</b> to start<input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" /></label><button className="button danger wide" disabled={!artifactsReady || !riskAccepted || confirmation !== "ERASE PSG1"} onClick={reviewInstallationReadiness}>Review installation readiness</button></div>}
     {stage === "install" && <div className="pending"><strong>{installStep === "complete" ? "✓ Beta installation complete" : "Destructive boundary recorded."}</strong><p>{destructiveBrowserFlashingEnabled ? installInstruction(installStep) : "No Fastboot command has been sent. This exact release still requires a signed production diagnostics pair and a complete stock-PSG1 validation run before beta flashing can be opened."}</p>{destructiveBrowserFlashingEnabled && installStep !== "complete" && <button className="button danger wide" onClick={continueInstallation}>{installButton(installStep)}</button>}<small>{installStatus || "Do not unlock, flash, or use generic Fastboot commands outside the supervised beta procedure."}</small></div>}
     {error && <p className="error" role="alert">{error}</p>}
+    {needsWindowsFastbootSetup && <div className="notice"><strong>Windows Fastboot setup</strong><p>Install the WinUSB driver for <b>USB Download Gadget</b> only, then retry this step. Do not replace the <b>Android ADB Interface</b> driver.</p><Link className="text-link" href="/docs#windows-fastboot">Open the safe Windows setup steps →</Link></div>}
   </section>;
 }
 

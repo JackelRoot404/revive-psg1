@@ -13,6 +13,10 @@ export default function Docs() {
     <h2>Before anything changes</h2>
     <ol><li>Connect the powered-on PSG1 with a data-capable USB cable.</li><li>Authorize ADB when the PSG1 asks.</li><li>Run the free scan. Serial, firmware, partitions, battery, host storage, and recovery support must all pass a signed profile.</li></ol>
     <p>An unknown build receives a redacted read-only compatibility report. It is never charged, bound, unlocked, or flashed.</p>
+    <h2 id="windows-fastboot">Windows Fastboot setup</h2>
+    <p>Windows uses a separate USB driver after the PSG1 changes from Android to Fastboot. If the wizard says that Fastboot driver setup is required, use this temporary beta procedure:</p>
+    <ol><li>Leave the PSG1 connected in Fastboot and keep the Revive wizard open.</li><li>Download <a className="text-link" href="https://zadig.akeo.ie/" target="_blank" rel="noreferrer">Zadig from its official site ↗</a>. Its digital signature should name <em>Akeo Consulting</em>.</li><li>In Zadig, choose <strong>Options → List All Devices</strong>, then select <strong>USB Download Gadget</strong>—the PSG1 Fastboot device.</li><li>Select <strong>WinUSB</strong>, choose <strong>Install Driver</strong>, then return to Revive and retry the Fastboot selection.</li></ol>
+    <p><strong>Important:</strong> Select <strong>USB Download Gadget</strong> only. Do not replace <strong>Android ADB Interface</strong> or any unrelated USB device. This changes only the Windows driver binding; it does not unlock, wipe, flash, or otherwise modify the PSG1.</p>
     {!compatibilityCheckerOnly && <>
       <h2>{beta ? "Discord beta access" : "Free access"}</h2>
       <p>{beta ? "After a supported scan, enter a one-time Discord code. It binds to the first compatible PSG1 that redeems it. There is no wallet, payment, refund, transaction, or recovery-credential flow." : "Access is free and device-bound. No wallet, payment, transaction, or promo code is required."}</p>
