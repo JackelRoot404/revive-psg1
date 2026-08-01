@@ -1,24 +1,27 @@
 # Revive PSG1
 
-Self-service software for converting a compatible PlaySolana PSG1 into a general-purpose Android gaming handheld. The product is a Netlify-hosted Chrome/Edge WebUSB wizard backed by a Fastify API on DigitalOcean App Platform.
+Self-service software for converting a compatible, stock PlaySolana PSG1 into a general-purpose Android gaming handheld. The product is a Netlify-hosted Chrome/Edge WebUSB wizard backed by a Fastify API on DigitalOcean App Platform.
 
-> **Private browser beta / fail-closed installation.** Access is free only to Discord-supervised testers with a one-time code. Compatibility, signing/provenance, hardware evidence, dependency/legal work, and every destructive-installation gate fail closed. Conversion may be irreversible; do not distribute experimental images.
+> **Current availability: read-only scan only.** The repository defaults the API to `INSTALLER_MODE=scan_only`; the public installer must remain closed. The code has public-flow safeguards, but this repository does not yet contain a production release, a signed PSG1-only Windows driver, completed physical-host testing, or a trusted hardware-attestation source. A browser scan alone cannot prove that a caller owns a particular physical PSG1. Do not set `INSTALLER_MODE=public` or distribute experimental images.
 
-## What is implemented
+## What is implemented in the codebase
 
-- Read-only Android Rockchip CPU serial → Fastboot protocol verification, browser USB-descriptor telemetry, and stable SHA-256 device binding.
-- Signed firmware-profile matching and unknown-firmware rejection.
-- Signed ephemeral web sessions, a WebUSB ADB/Fastboot identity scan, Discord-issued one-time-code activation, atomic first-device binding, and a device-bound beta entitlement.
-- Backend-approved beta codes atomically bind to the first compatible PSG1 and are capped at 25 redemptions; the program label is never a public coupon.
-- Browser Fastboot transport supports the guarded download protocol and fails closed until the exact signed artifact and hardware download-window are validated.
+- Read-only Android Rockchip CPU serial → Fastboot protocol verification, browser USB-descriptor telemetry, and a stable SHA-256 device-binding key.
+- Signed universal-stock-profile matching, granular read-only preflight decisions, and consented/redacted unknown-hardware/build reporting.
+- Signed ephemeral web sessions plus code paths for free public activation, atomic first-device binding, and a device-bound installation entitlement. Those paths are runtime-gated and are not currently available to customers.
+- The API selects only a signed release explicitly bound to the scanned signed profile.
+- Browser Fastboot transport supports the guarded download protocol, local and server-backed write-ahead journaling, a same-origin durable Fastboot-only resume credential, and fails closed until the exact signed artifact and hardware download-window are validated.
 - Journaled allowlisted installer engine for `fastboot oem at-unlock-vboot`, validated fastbootd, vbmeta/system flashing, wipe, and reboot.
-- Resume-capable, three-attempt artifact downloads with size and SHA-256 verification.
+- Resume-capable, three-attempt artifact downloads with size and SHA-256 verification; signed minimum system/super-partition capacity is checked before resize and flash.
 - Versioned irreversible-risk acknowledgement recorded immediately before destructive work.
-- Netlify landing page, beta wizard, docs, privacy, and terms.
+- A signed-release-bound Windows Fastboot-driver metadata path. This is not a shipped driver package; no generic Rockchip or ADB driver may be substituted.
+- Netlify landing page, public installer wizard, docs, privacy, and terms.
 - DigitalOcean App Platform, PostgreSQL, Valkey, and Spaces configuration surfaces.
 
 ## Product limitations
 
+- This is not a public flashing service today. `scan_only` results are compatibility observations, not an approval to unlock or flash.
+- A WebUSB/ADB/Fastboot client can report fabricated device observations. The current cross-mode serial match is a useful continuity check and a device-binding input, but it is not trusted hardware attestation. A public release requires an independently trusted PSG1 attestation design in addition to the browser flow.
 - The PSG1 remains bootloader-unlocked after conversion, and no echOS restoration image is provided. Conversion may be irreversible.
 - The device/ROM is not Google-certified; Play Integrity, banking, DRM, and some games may refuse to run.
 - Revive mirrors a reviewed, signed-manifest GMS-free system image and verified convenience APKs; it does not distribute Google Mobile Services or Play Store.
@@ -28,8 +31,8 @@ Self-service software for converting a compatible PlaySolana PSG1 into a general
 ## Repository
 
 ```text
-apps/web       Next.js website and Discord-supervised WebUSB beta wizard (Netlify)
-apps/api       Fastify API, Drizzle schema/migrations, Solana verification (DigitalOcean)
+apps/web       Next.js website and Chrome/Edge WebUSB installer (Netlify)
+apps/api       Fastify API, Drizzle schema/migrations, signed release policy (DigitalOcean)
 packages/contracts  Shared Zod schemas, messages, constants
 profiles       Unsigned compatibility-profile source templates
 tools          Offline signing utilities (private keys are never committed)
@@ -48,7 +51,7 @@ npm run dev:api
 npm run dev:web
 ```
 
-The API intentionally reports devices as unsupported unless `RELEASE_PUBLIC_KEY_PEM` is configured and the database contains a matching active profile whose canonical JSON signature verifies.
+The API intentionally reports a non-installable scan decision unless `RELEASE_PUBLIC_KEY_PEM` is configured and the database contains a matching active profile whose canonical JSON signature verifies. Even with those development materials present, keep the service in `scan_only`; a signed profile or manifest is not physical-device attestation.
 
 ### Test without a stock PSG1
 
@@ -80,9 +83,9 @@ See the [tester launch checklist](docs/tester-launch-checklist.md), [devnet paym
 3. Deploy `apps/api/.do/app.yaml`, apply migrations with the migration role, then run the idempotent seed.
 4. Deploy the root repository to Netlify using `netlify.toml` and public-only `NEXT_PUBLIC_*` variables.
 5. Upload signed private artifacts to Spaces and insert their separately signed release manifest.
-6. Open tester access only after all launch-gate records carry reviewed evidence.
+6. Keep `INSTALLER_MODE=scan_only` until the trusted hardware-attestation design, real signed public-release materials, signed PSG1-only Windows driver, and physical Windows/macOS browser validation are independently reviewed. A template, a browser-only scan, or a configuration flag is not sufficient to switch to `public`.
 
-The browser beta remains closed until both `BETA_BROWSER_INSTALLER=true` on the API and `NEXT_PUBLIC_BETA_BROWSER_INSTALLER=true` on Netlify are enabled. Public sales remain disabled. Testers redeem a one-time Discord `rpb_…` code that binds to their first supported PSG1.
+The browser installer remains read-only while the API is `scan_only`. `INSTALLER_MODE` is a runtime API switch, so Netlify does not carry a separate destructive-installation feature flag. It is a gate, not evidence that the required release or trusted hardware-attestation work has occurred. Public sales remain disabled; any future eligible public installation is intended to be free and device-bound.
 
 ## Signing a profile or manifest
 
@@ -94,7 +97,7 @@ REVIVE_OFFLINE_SIGNING_KEY_PEM="$(security find-generic-password -w -s revive-re
   > psg1-rk3588s-v11-api35-v1.signed.json
 ```
 
-The checked-in profile is only a source template. The current `playsolana/.*/PSG1:15/.*` pattern is intentionally broad for the public read-only compatibility checker; it does not by itself certify that every matching build is safe to unlock or flash. Narrow or split profiles only after read-only partition, bootloader, vendor, serial-uniqueness, controls, Wi-Fi, audio, storage, and fingerprint validation.
+The checked-in profile is only a source template. A universal stock PSG1 profile must verify immutable hardware identity, a locked stock PlaySolana build marker, partition layout, Fastboot protocol capability, battery, and host capacity; it is not a generic Rockchip profile. Browser-collected values still need to be backed by a trusted attestation source before public destructive authorization. Add a higher-priority split profile only after variant-specific partition, bootloader, vendor, controls, Wi-Fi, audio, storage, and fingerprint validation.
 
 Insert or refresh a signed profile in PostgreSQL with:
 

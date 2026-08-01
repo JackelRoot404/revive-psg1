@@ -1,87 +1,58 @@
-# Compatibility checker production cutover
+# Public installer cutover
 
-Use this checklist when publishing the public read-only compatibility checker. Browser unlock, Early Access activation, and flashing stay closed via `COMPATIBILITY_CHECKER_ONLY=true` on the API and `NEXT_PUBLIC_COMPATIBILITY_CHECKER_ONLY=true` on Netlify.
+`INSTALLER_MODE` is the sole availability switch. The static web site always
+runs the read-only scan and renders the API's decision; it must never be given
+a separate destructive feature flag.
 
-## 1. Secure the release signing key
+## 1. Prepare immutable release inputs
 
-The offline Ed25519 private key lives in macOS Keychain under service name `revive-release-key`. Do not commit `.pem` files.
+Before changing the API mode, complete
+[`universal-public-release.md`](universal-public-release.md):
 
-Keep a durable signed profile envelope outside `/tmp`, for example:
+- offline-sign the universal stock PSG1 profile and matching release manifest;
+- include the signed allowlisted `flashPlan`;
+- upload every hashed private artifact to production object storage;
+- record approved public release evidence; and
+- publish the narrowly targeted signed Windows Fastboot driver package.
 
-```bash
-mkdir -p ~/revive-signing
-cp /tmp/psg1-rk3588s-v11-api35-v1.signed.json ~/revive-signing/
-rm -f /tmp/revive-release-key.pem /tmp/revive-release-key.pub.pem /tmp/psg1-rk3588s-v11-api35-v1.signed.json
-```
+Do not replace these inputs with template JSON, a broad Rockchip driver, or a
+generic OTA/downgrade package.
 
-## 2. Atomic DigitalOcean cutover
+## 2. Deploy while read-only
 
-Apply both steps in the same maintenance window.
+1. Deploy the API and web code with `INSTALLER_MODE=scan_only`.
+2. Set `RELEASE_PUBLIC_KEY_PEM` to the offline profile/release verification
+   public key.
+3. Upsert every signed profile. Multiple active profiles are supported; their
+   signed priorities must not tie for the same device.
+4. Insert active release manifests with
+   `tools/insert-release-manifest.mjs`. Each manifest must name the profile IDs
+   it serves; the insertion tool deactivates only overlapping profile releases.
+5. Confirm a supported stock scan returns a `decision` with
+   `profile: matched`, `preflight: passed`, `installerMode: scan_only`, and
+   `canInstall: false`.
+6. Confirm all activation, release, and destructive routes still deny new
+   installation starts.
 
-### A. Update App Platform secret
+## 3. Open free public access
 
-Set `RELEASE_PUBLIC_KEY_PEM` to the new public key:
+Change only the API runtime environment:
 
 ```text
------BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAJLMd3//Bo9wUw0tx5waU+UjeuOWMtxDO5oiz3+Q1850=
------END PUBLIC KEY-----
+INSTALLER_MODE=public
+INSTALLER_NEW_STARTS_ENABLED=true
 ```
 
-In the App Platform UI, paste the PEM with real newlines or escaped `\n` as your other secrets use.
+The service permits public activation only for a `stock_locked` session with a
+matched, preflight-passing profile and a public-evidence-ready release bound to
+that profile. No Discord code, wallet, payment, or browser deployment is
+required.
 
-Confirm these runtime env vars remain:
+## 4. Emergency response
 
-- `COMPATIBILITY_CHECKER_ONLY=true`
-- `PUBLIC_SALES_ENABLED=false`
-- `EARLY_ACCESS_FREE=true`
-- `ALLOWED_ORIGINS=https://revivepsg.com,https://www.revivepsg.com`
-
-Redeploy the API after updating secrets.
-
-### B. Upsert the signed profile into production PostgreSQL
-
-From a machine that can reach the production database with the migration/runtime role:
-
-```bash
-DATABASE_URL='postgresql://…' \
-  node tools/insert-compatibility-profile.mjs ~/revive-signing/psg1-rk3588s-v11-api35-v1.signed.json
-```
-
-The helper deactivates other profile rows and upserts `psg1-rk3588s-v11-api35-v1` as active.
-
-## 3. Netlify web deployment
-
-Set production env vars:
-
-- `NEXT_PUBLIC_SITE_URL=https://revivepsg.com`
-- `NEXT_PUBLIC_API_URL=https://api.revivepsg.com`
-- `NEXT_PUBLIC_COMPATIBILITY_CHECKER_ONLY=true`
-- `NEXT_PUBLIC_SALES_STATE=closed`
-- `EARLY_ACCESS_FREE=true`
-- `NEXT_PUBLIC_LEGAL_ENTITY=biccsdev`
-- `NEXT_PUBLIC_SUPPORT_URL=https://discord.gg/QWYxkJgEHH`
-
-Deploy from the repository root using `netlify.toml`.
-
-## 4. Smoke tests
-
-1. `curl -fsS https://api.revivepsg.com/healthz`
-2. Open `https://revivepsg.com/wizard` in desktop Chrome or Edge.
-3. Run a supported PSG1 scan and confirm the wizard ends on **Compatible for a future Revive unlock** with no activation button.
-4. Confirm installer routes fail closed:
-   - `POST /v1/early-access/activate` → `403` / `COMPATIBILITY_CHECKER_ONLY`
-   - `GET /v1/releases/stable` → `403` / `COMPATIBILITY_CHECKER_ONLY`
-
-## 5. Re-signing later
-
-```bash
-REVIVE_OFFLINE_SIGNING_KEY_PEM="$(security find-generic-password -w -s revive-release-key)" \
-  node tools/sign-document.mjs profiles/psg1-rk3588s-v11.template.json \
-  > ~/revive-signing/psg1-rk3588s-v11-api35-v1.signed.json
-
-DATABASE_URL='postgresql://…' \
-  node tools/insert-compatibility-profile.mjs ~/revive-signing/psg1-rk3588s-v11-api35-v1.signed.json
-```
-
-When the browser installer opens publicly, set `COMPATIBILITY_CHECKER_ONLY=false` on the API and `NEXT_PUBLIC_COMPATIBILITY_CHECKER_ONLY=false` on Netlify together.
+Set `INSTALLER_NEW_STARTS_ENABLED=false` to pause only new destructive
+boundaries while retaining authenticated resume for already-started PSG1s. Set
+`INSTALLER_MODE=scan_only` as the broader emergency mode: it denies new
+activation/downloads but still permits an already-started device to retrieve
+its exact active signed release. Do not remove that matching release or its
+artifact objects while a resume may be needed.

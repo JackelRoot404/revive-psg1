@@ -56,6 +56,22 @@ describe("local configuration", () => {
     expect(loadConfig({ NODE_ENV: "development", COMPATIBILITY_CHECKER_ONLY: "false" }).compatibilityCheckerOnly).toBe(false);
   });
 
+  it("uses INSTALLER_MODE as the authoritative installer availability policy", () => {
+    expect(loadConfig({ NODE_ENV: "development" }).installerMode).toBe("scan_only");
+    expect(loadConfig({
+      NODE_ENV: "development",
+      INSTALLER_MODE: "public",
+      COMPATIBILITY_CHECKER_ONLY: "true",
+      BETA_BROWSER_INSTALLER: "false"
+    }).installerMode).toBe("public");
+    expect(loadConfig({ NODE_ENV: "development", INSTALLER_MODE: "private_beta" }).installerMode).toBe("private_beta");
+  });
+
+  it("keeps an independent emergency brake for new destructive starts", () => {
+    expect(loadConfig({ NODE_ENV: "development", INSTALLER_MODE: "public" }).installerNewStartsEnabled).toBe(true);
+    expect(loadConfig({ NODE_ENV: "development", INSTALLER_MODE: "public", INSTALLER_NEW_STARTS_ENABLED: "false" }).installerNewStartsEnabled).toBe(false);
+  });
+
   it("keeps destructive browser installation opt-in", () => {
     expect(loadConfig({ NODE_ENV: "development" }).betaBrowserInstaller).toBe(false);
     expect(loadConfig({ NODE_ENV: "development", BETA_BROWSER_INSTALLER: "true" }).betaBrowserInstaller).toBe(true);

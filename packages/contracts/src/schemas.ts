@@ -7,6 +7,8 @@ export const signatureSchema = z.string().min(64).max(256);
 export const uuidSchema = z.string().uuid();
 export const betaInviteTokenSchema = z.string().regex(/^rpb_[A-Za-z0-9_-]{32,128}$/);
 export const recoveryCredentialSchema = z.string().regex(/^rpr_[A-Za-z0-9_-]{32,128}$/);
+export const installationResumeCredentialSchema = z.string().regex(/^rpi_[A-Za-z0-9_-]{32,128}$/);
+export const installerModeSchema = z.enum(["scan_only", "private_beta", "public"]);
 
 export const compatibilitySnapshotSchema = z.object({
   product: z.string().max(80),
@@ -118,6 +120,29 @@ export const betaActivateSchema = z.object({
   betaInviteToken: betaInviteTokenSchema
 });
 
+// Public activation is deliberately device-session-bound. There is no
+// invitation, coupon, wallet, or other transferable credential in this flow.
+export const publicActivateSchema = z.object({
+  sessionId: uuidSchema
+});
+
+// Resume is deliberately a separate, device-session-bound capability. The
+// server permits it only after the same device has crossed the irreversible
+// boundary with an exact signed release binding; it cannot create a new
+// entitlement or turn an arbitrary modified device into an installer target.
+export const publicResumeSchema = z.object({
+  sessionId: uuidSchema
+});
+
+// A persistent same-origin browser journal may use this only after a prior
+// destructive boundary. It has no scan/session entitlement and cannot mint a
+// new installation; it merely restores the exact stored release after the
+// browser reselects the Fastboot protocol-serial device.
+export const fastbootResumeSchema = z.object({
+  deviceId: deviceIdSchema,
+  resumeCredential: installationResumeCredentialSchema
+});
+
 export const betaResumeSchema = z.object({
   sessionId: uuidSchema
 });
@@ -125,7 +150,80 @@ export const betaResumeSchema = z.object({
 export const installationStartSchema = z.object({
   termsVersion: z.string().trim().min(1).max(80),
   irreversibleRiskAcknowledged: z.literal(true),
-  confirmation: z.literal("ERASE PSG1")
+  confirmation: z.literal("ERASE PSG1"),
+  profileId: z.string().trim().min(1).max(120),
+  // These are derived from the exact release document the browser verified.
+  // They close the gap between artifact download and the destructive boundary
+  // if a release is replaced while the owner is reading the warning.
+  releaseId: uuidSchema,
+  releaseVersion: z.string().trim().min(1).max(64),
+  manifestSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  artifactHashes: z.record(
+    z.string().trim().min(1).max(100),
+    z.string().regex(/^[a-f0-9]{64}$/)
+  )
+});
+
+export const installationJournalStageSchema = z.enum([
+  "start",
+  "awaiting_bootloader_unlock",
+  "awaiting_unlocked_android",
+  "awaiting_vbmeta_bootloader",
+  "awaiting_system_android",
+  "awaiting_fastbootd_system",
+  "awaiting_postflash_android",
+  "awaiting_first_cold_boot",
+  "awaiting_second_cold_boot",
+  "complete"
+]);
+
+export const installationJournalOperationSchema = z.enum([
+  "begin",
+  "unlock",
+  "reboot_for_vbmeta",
+  "flash_vbmeta",
+  "reboot_after_vbmeta",
+  "reboot_for_fastbootd",
+  "resize_system",
+  "flash_system",
+  "wipe_userdata",
+  "reboot_after_system",
+  "install_diagnostics",
+  "install_diagnostics_test",
+  "install_aurora_store",
+  "install_retroarch",
+  "reboot_after_apps",
+  "first_cold_boot",
+  "diagnostics"
+]);
+
+export const installationOperationStateSchema = z.enum(["intent", "sent", "verified", "unknown"]);
+
+// The server journal intentionally does not receive the raw Fastboot serial.
+// The authenticated device id is already a one-way identity binding, while
+// the browser retains the raw serial locally to perform its USB recheck.
+export const installationJournalEntrySchema = z.object({
+  profileId: z.string().trim().min(1).max(120),
+  releaseVersion: z.string().trim().min(1).max(64),
+  artifactHashes: z.record(
+    z.string().trim().min(1).max(100),
+    z.string().regex(/^[a-f0-9]{64}$/)
+  ),
+  stage: installationJournalStageSchema,
+  operation: installationJournalOperationSchema,
+  operationState: installationOperationStateSchema,
+  // Most checkpoints are a single command (0/1). Sparse system images are
+  // explicitly journaled one exact Fastboot `flash:system` transfer at a
+  // time, so an interruption can restart only the idempotent signed segment.
+  operationIndex: z.number().int().min(0).max(100_000),
+  operationCount: z.number().int().min(1).max(100_000)
+}).superRefine((entry, context) => {
+  if (entry.operationIndex >= entry.operationCount) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["operationIndex"], message: "operationIndex must be less than operationCount" });
+  }
+  if (entry.operation !== "flash_system" && (entry.operationIndex !== 0 || entry.operationCount !== 1)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["operationIndex"], message: "only flash_system may use multiple operation segments" });
+  }
 });
 
 export const entitlementRecoverySchema = z.object({
@@ -181,6 +279,21 @@ export const privateFirmwareArtifactSchema = artifactBaseSchema.extend({
   packageName: z.string().regex(/^[a-z][a-z0-9_.]{2,150}$/).optional(),
   versionName: z.string().trim().min(1).max(120).optional()
 }).superRefine((artifact, context) => {
+  const requiredKinds: Partial<Record<typeof artifact.component, "system" | "vbmeta" | "apk">> = {
+    android_system: "system",
+    verified_boot: "vbmeta",
+    diagnostics: "apk",
+    diagnostics_test: "apk",
+    aurora_store: "apk",
+    retroarch: "apk"
+  };
+  const expectedKind = requiredKinds[artifact.component];
+  if (expectedKind && artifact.kind !== expectedKind) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["kind"], message: `${artifact.component} must be a ${expectedKind} artifact` });
+  }
+  if (artifact.objectKey.startsWith("/") || artifact.objectKey.split("/").includes("..")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["objectKey"], message: "Private artifact object keys must remain inside their release prefix" });
+  }
   if (artifact.kind !== "apk") return;
   if (!artifact.signerSha256) context.addIssue({ code: z.ZodIssueCode.custom, path: ["signerSha256"], message: "APK signer digest is required" });
   if (!artifact.packageName) context.addIssue({ code: z.ZodIssueCode.custom, path: ["packageName"], message: "APK package name is required" });
@@ -209,6 +322,9 @@ export const firmwareArtifactSchema = z.discriminatedUnion("delivery", [
 export const compatibilityProfileSchema = z.object({
   id: z.string().min(1),
   version: z.number().int().positive(),
+  // This value is part of the signed profile rather than database metadata so
+  // selection remains deterministic wherever a profile is consumed.
+  priority: z.number().int().min(0).max(1_000_000),
   product: z.literal("PSG1"),
   modelPatterns: z.array(z.string()).min(1),
   boardPatterns: z.array(z.string()).min(1),
@@ -232,6 +348,24 @@ export const compatibilityProfileSchema = z.object({
   diagnosticsCommand: z.array(z.string().min(1).max(120)).min(2).max(20),
   signature: z.string().min(64)
 });
+
+const fullStockPsg1ValidationSchema = z.object({
+  status: z.literal("passed"),
+  validatedAt: z.string().datetime(),
+  stockUnitCount: z.number().int().min(1),
+  chromeWindows: z.literal(true),
+  edgeWindows: z.literal(true),
+  chromeMacos: z.literal(true),
+  edgeMacos: z.literal(true),
+  controls: z.literal(true),
+  wifi: z.literal(true),
+  audio: z.literal(true),
+  storage: z.literal(true),
+  auroraStore: z.literal(true),
+  retroArch: z.literal(true),
+  diagnostics: z.literal(true),
+  twoColdBoots: z.literal(true)
+}).strict();
 
 const betaEvidenceSchema = z.object({
   source: z.object({
@@ -263,17 +397,7 @@ const betaEvidenceSchema = z.object({
   // The deliberately narrow alternative exists for one Discord-supervised
   // stock-device pilot, never for a general beta cohort.
   stockPsg1Validation: z.discriminatedUnion("status", [
-    z.object({
-      status: z.literal("passed"),
-      validatedAt: z.string().datetime(),
-      stockUnitCount: z.number().int().min(1),
-      chromeWindows: z.literal(true),
-      edgeWindows: z.literal(true),
-      chromeMacos: z.literal(true),
-      edgeMacos: z.literal(true),
-      controls: z.literal(true), wifi: z.literal(true), audio: z.literal(true), storage: z.literal(true),
-      auroraStore: z.literal(true), retroArch: z.literal(true), diagnostics: z.literal(true), twoColdBoots: z.literal(true)
-    }).strict(),
+    fullStockPsg1ValidationSchema,
     z.object({
       status: z.literal("pilot_pending"),
       plannedAt: z.string().datetime(),
@@ -291,18 +415,151 @@ const betaEvidenceSchema = z.object({
   artifactSha256: z.record(z.string().min(1).max(100), z.string().regex(/^[a-f0-9]{64}$/))
 }).strict();
 
+// The browser installer supports exactly one reviewed PSG1 flashing sequence.
+// Every action-affecting value is signed and allowlisted; callers must reject
+// a manifest that adds or substitutes a generic Fastboot command.
+export const psg1FlashPlanSchema = z.object({
+  version: z.literal(1),
+  target: z.literal("PSG1"),
+  requiredInstallationState: z.literal("stock_locked"),
+  unlockCommand: z.literal("fastboot oem at-unlock-vboot"),
+  vbmetaPartition: z.literal("vbmeta"),
+  systemPartition: z.literal("system"),
+  systemMode: z.literal("fastbootd"),
+  // These limits bind the release image to a partition layout before the
+  // browser asks Fastbootd to resize anything. They are deliberately part of
+  // the signed command plan rather than an unsigned UI estimate.
+  minimumSystemBytes: z.number().int().min(2_000_000_000).max(4_294_967_296),
+  minimumSuperPartitionBytes: z.number().int().min(50_000_000_000).max(60_000_000_000),
+  resizeLogicalSystem: z.literal(true),
+  wipeUserData: z.literal(true),
+  postFlashApkComponents: z.tuple([
+    z.literal("diagnostics"),
+    z.literal("diagnostics_test"),
+    z.literal("aurora_store"),
+    z.literal("retroarch")
+  ]),
+  requiredColdBoots: z.literal(2),
+  diagnosticsCommand: z.tuple([
+    z.literal("am"),
+    z.literal("instrument"),
+    z.literal("-w"),
+    z.literal("com.revivepsg1.diagnostics.test/androidx.test.runner.AndroidJUnitRunner")
+  ])
+}).strict();
+
+// Public release evidence is intentionally separate from the private-beta
+// pilot record. A public activation may rely only on this complete reviewed
+// evidence set, never on a pilot-pending beta validation.
+export const publicEvidenceSchema = z.object({
+  source: z.object({
+    releaseUrl: z.string().url().refine((value) => new URL(value).protocol === "https:"),
+    tag: z.string().trim().min(1).max(160),
+    upstreamAssetName: z.string().trim().min(1).max(240),
+    upstreamArchiveSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    expandedSystemSha256: z.string().regex(/^[a-f0-9]{64}$/)
+  }).strict(),
+  licenseReview: z.object({
+    status: z.literal("approved"),
+    license: z.string().trim().min(1).max(160),
+    reviewer: z.string().trim().min(1).max(120),
+    reviewedAt: z.string().datetime(),
+    evidenceUrl: z.string().url().refine((value) => new URL(value).protocol === "https:")
+  }).strict(),
+  noGmsInspection: z.object({
+    tool: z.string().trim().min(1).max(160),
+    inspectedAt: z.string().datetime(),
+    checkedPaths: z.array(z.string().trim().min(1).max(500)).min(3).max(50),
+    detectedGmsPackages: z.array(z.string()).max(0),
+    reviewedNonGmsGooglePackages: z.array(z.string().trim().min(1).max(240)).max(20),
+    reportSha256: z.string().regex(/^[a-f0-9]{64}$/)
+  }).strict(),
+  windowsFastbootDriver: z.object({
+    packageUrl: z.string().url().refine((value) => new URL(value).protocol === "https:"),
+    installerSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    catalogSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    authenticodeSigner: z.string().trim().min(1).max(240),
+    // A fastboot driver must bind an exact PSG1 interface, never a generic
+    // Rockchip vendor id or Android ADB interface.
+    hardwareIds: z.array(z.string().regex(/^USB\\VID_[0-9A-F]{4}&PID_[0-9A-F]{4}&MI_[0-9A-F]{2}$/u)).min(1).max(8),
+    interfaceGuid: z.string().uuid(),
+    testedWindowsVersions: z.array(z.enum(["windows_10", "windows_11"])).min(2).max(2)
+  }).strict(),
+  // Public self-service requires complete validation on stock hardware in
+  // every supported desktop browser. Unlike private beta, there is no pilot
+  // exception or cohort-code path for an unvalidated release.
+  stockPsg1Validation: fullStockPsg1ValidationSchema,
+  artifactSha256: z.record(z.string().min(1).max(100), z.string().regex(/^[a-f0-9]{64}$/)),
+  review: z.object({
+    status: z.literal("approved"),
+    reviewer: z.string().trim().min(1).max(120),
+    reviewedAt: z.string().datetime(),
+    riskAcknowledgement: z.literal("I approve public self-service PSG1 installation only for stock-locked devices using this signed flash plan.")
+  }).strict()
+}).strict();
+
 export const releaseManifestSchema = z.object({
   releaseId: uuidSchema,
   channel: z.literal("stable"),
   version: z.string().min(1),
-  minimumInstallerVersion: z.string().min(1),
+  minimumInstallerVersion: z.string().regex(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/u),
   profileIds: z.array(z.string()).min(1),
   artifacts: z.array(firmwareArtifactSchema).min(1),
   releaseNotes: z.string().max(8_000),
   publishedAt: z.string().datetime(),
   signingKeyId: z.string().min(1),
+  flashPlan: psg1FlashPlanSchema,
   betaEvidence: betaEvidenceSchema.optional(),
+  publicEvidence: publicEvidenceSchema.optional(),
   signature: z.string().min(64)
+}).superRefine((manifest, context) => {
+  const ids = new Set<string>();
+  const installerComponents = new Set([
+    "android_system", "verified_boot", "diagnostics", "diagnostics_test", "aurora_store", "retroarch"
+  ]);
+  const components = new Set<string>();
+  const browserRoleKinds: Record<string, "system" | "vbmeta" | "apk"> = {
+    android_system: "system",
+    verified_boot: "vbmeta",
+    diagnostics: "apk",
+    diagnostics_test: "apk",
+    aurora_store: "apk",
+    retroarch: "apk"
+  };
+  let hasPrivateBrowserSystem = false;
+  for (const artifact of manifest.artifacts) {
+    if (ids.has(artifact.id)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["artifacts"], message: `Duplicate artifact id: ${artifact.id}` });
+    }
+    ids.add(artifact.id);
+    if (artifact.delivery === "private" && installerComponents.has(artifact.component)) {
+      if (artifact.component === "android_system") hasPrivateBrowserSystem = true;
+      const expectedKind = browserRoleKinds[artifact.component];
+      if (expectedKind && artifact.kind !== expectedKind) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ["artifacts"], message: `${artifact.component} must be a ${expectedKind} artifact` });
+      }
+      if (components.has(artifact.component)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ["artifacts"], message: `Duplicate installer artifact component: ${artifact.component}` });
+      }
+      components.add(artifact.component);
+    }
+  }
+  if (hasPrivateBrowserSystem) {
+    for (const component of installerComponents) {
+      if (!components.has(component)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ["artifacts"], message: `Private PSG1 browser releases require ${component}` });
+      }
+    }
+  }
+});
+
+export const webSessionDecisionSchema = z.object({
+  profile: z.enum(["matched", "not_recognized"]),
+  deviceState: installationStateSchema,
+  preflight: z.enum(["passed", "blocked"]),
+  blockers: z.array(z.string().min(1).max(120)).max(20),
+  installerMode: installerModeSchema,
+  canInstall: z.boolean()
 });
 
 export type SessionCreateInput = z.infer<typeof sessionCreateSchema>;
@@ -310,3 +567,6 @@ export type CompatibilitySnapshot = z.infer<typeof compatibilitySnapshotSchema>;
 export type WebCompatibilitySnapshot = z.infer<typeof webCompatibilitySnapshotSchema>;
 export type CompatibilityProfile = z.infer<typeof compatibilityProfileSchema>;
 export type ReleaseManifest = z.infer<typeof releaseManifestSchema>;
+export type Psg1FlashPlan = z.infer<typeof psg1FlashPlanSchema>;
+export type WebSessionDecision = z.infer<typeof webSessionDecisionSchema>;
+export type InstallationJournalEntry = z.infer<typeof installationJournalEntrySchema>;

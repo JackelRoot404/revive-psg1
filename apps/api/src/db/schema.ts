@@ -122,8 +122,55 @@ export const licenses = pgTable("licenses", {
   recoveryCredentialDigest: varchar("recovery_credential_digest", { length: 64 }),
   claimedAt: timestamp("claimed_at", { withTimezone: true }).notNull().defaultNow(),
   modificationStartedAt: timestamp("modification_started_at", { withTimezone: true }),
+  // These immutable fields bind a destructive boundary to one reviewed
+  // profile/release/artifact set. They make an interrupted installation
+  // resumable without letting a later manifest substitution change its plan.
+  installationProfileId: varchar("installation_profile_id", { length: 120 }),
+  // Keep the exact signed profile envelope that admitted this device. Profile
+  // deactivation may stop new starts, but must never make a boundary-crossed
+  // PSG1 unable to retrieve its already-signed recovery release.
+  installationProfileDocument: jsonb("installation_profile_document"),
+  installationProfileSignature: text("installation_profile_signature"),
+  // A version label and artifact list are not a sufficient release identity:
+  // a re-signed manifest could reuse both. Persist the immutable release row
+  // id plus the canonical manifest digest for exact post-boundary resume.
+  installationReleaseId: uuid("installation_release_id"),
+  installationReleaseVersion: varchar("installation_release_version", { length: 64 }),
+  installationManifestSha256: varchar("installation_manifest_sha256", { length: 64 }),
+  installationArtifactHashes: jsonb("installation_artifact_hashes"),
+  // A rotating opaque credential is kept only in the same-origin persistent
+  // browser journal. It restores an already-bound release after a tab/browser
+  // crash in Fastboot; it cannot create a fresh entitlement.
+  installationResumeCredentialDigest: varchar("installation_resume_credential_digest", { length: 64 }),
+  installationResumeCredentialExpiresAt: timestamp("installation_resume_credential_expires_at", { withTimezone: true }),
   refundedAt: timestamp("refunded_at", { withTimezone: true })
 }, (table) => [uniqueIndex("licenses_device_uq").on(table.deviceId), uniqueIndex("licenses_order_uq").on(table.orderId)]);
+
+// Append-only write-ahead records for an active browser installation. The
+// browser keeps its raw Fastboot serial locally; the server stores only its
+// hashed device binding and signed release identifiers.
+export const installationJournalEntries = pgTable("installation_journal_entries", {
+  id: uuid("id").primaryKey(),
+  // Monotonic per-license sequence assigned while holding the license advisory
+  // lock. It makes a journal chain deterministic even if two records share a
+  // timestamp and prevents concurrent tabs from branching the state machine.
+  sequence: integer("sequence").notNull(),
+  licenseId: uuid("license_id").notNull().references(() => licenses.id, { onDelete: "cascade" }),
+  deviceId: varchar("device_id", { length: 64 }).notNull().references(() => devices.id),
+  profileId: varchar("profile_id", { length: 120 }).notNull(),
+  releaseVersion: varchar("release_version", { length: 64 }).notNull(),
+  artifactHashes: jsonb("artifact_hashes").notNull(),
+  stage: varchar("stage", { length: 64 }).notNull(),
+  operation: varchar("operation", { length: 64 }).notNull(),
+  operationState: varchar("operation_state", { length: 16 }).notNull(),
+  operationIndex: integer("operation_index").notNull().default(0),
+  operationCount: integer("operation_count").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  uniqueIndex("installation_journal_entries_license_sequence_uq").on(table.licenseId, table.sequence),
+  index("installation_journal_entries_license_time_idx").on(table.licenseId, table.createdAt),
+  index("installation_journal_entries_device_time_idx").on(table.deviceId, table.createdAt)
+]);
 
 export const betaInvites = pgTable("beta_invites", {
   id: uuid("id").primaryKey(),
@@ -181,6 +228,9 @@ export const releases = pgTable("releases", {
   signedManifest: jsonb("signed_manifest").notNull(),
   signature: text("signature").notNull(),
   active: boolean("active").notNull().default(false),
+  // A superseded release is removed from new selection (`active=false`) but
+  // retained for the exact devices that already crossed its boundary.
+  resumeAvailable: boolean("resume_available").notNull().default(true),
   publishedAt: timestamp("published_at", { withTimezone: true }).notNull()
 }, (table) => [uniqueIndex("releases_version_channel_uq").on(table.version, table.channel)]);
 

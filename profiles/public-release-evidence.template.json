@@ -1,0 +1,64 @@
+{
+  "source": {
+    "releaseUrl": "https://REPLACE_WITH_APPROVED_GMS_FREE_RELEASE",
+    "tag": "REPLACE_WITH_APPROVED_TAG",
+    "upstreamAssetName": "REPLACE_WITH_APPROVED_VANILLA_ARM64_SYSTEM_ASSET",
+    "upstreamArchiveSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "expandedSystemSha256": "REPLACE_WITH_64_LOWERCASE_HEX"
+  },
+  "licenseReview": {
+    "status": "approved",
+    "license": "REPLACE_WITH_APPROVED_LICENSE",
+    "reviewer": "REPLACE_WITH_REVIEWER",
+    "reviewedAt": "2026-01-01T00:00:00.000Z",
+    "evidenceUrl": "https://REPLACE_WITH_LICENSE_EVIDENCE"
+  },
+  "noGmsInspection": {
+    "tool": "debugfs package-directory and package-manifest inspection",
+    "inspectedAt": "2026-01-01T00:00:00.000Z",
+    "checkedPaths": ["/system/app", "/system/priv-app", "/system_ext/priv-app", "/product/app", "/product/priv-app"],
+    "detectedGmsPackages": [],
+    "reviewedNonGmsGooglePackages": [],
+    "reportSha256": "REPLACE_WITH_64_LOWERCASE_HEX"
+  },
+  "windowsFastbootDriver": {
+    "packageUrl": "https://REPLACE_WITH_SIGNED_PSG1_FASTBOOT_DRIVER_PACKAGE",
+    "installerSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "catalogSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "authenticodeSigner": "REPLACE_WITH_PUBLISHED_REVIVE_SIGNING_IDENTITY",
+    "hardwareIds": ["USB\\VID_REPLACE&PID_REPLACE&MI_REPLACE"],
+    "interfaceGuid": "00000000-0000-4000-8000-000000000000",
+    "testedWindowsVersions": ["windows_10", "windows_11"]
+  },
+  "stockPsg1Validation": {
+    "status": "passed",
+    "validatedAt": "2026-01-01T00:00:00.000Z",
+    "stockUnitCount": 1,
+    "chromeWindows": true,
+    "edgeWindows": true,
+    "chromeMacos": true,
+    "edgeMacos": true,
+    "controls": true,
+    "wifi": true,
+    "audio": true,
+    "storage": true,
+    "auroraStore": true,
+    "retroArch": true,
+    "diagnostics": true,
+    "twoColdBoots": true
+  },
+  "review": {
+    "status": "approved",
+    "reviewer": "REPLACE_WITH_RELEASE_REVIEWER",
+    "reviewedAt": "2026-01-01T00:00:00.000Z",
+    "riskAcknowledgement": "I approve public self-service PSG1 installation only for stock-locked devices using this signed flash plan."
+  },
+  "artifactSha256": {
+    "psg1-system-public-1": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "psg1-vbmeta-public-1": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "psg1-diagnostics-public-1": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "psg1-diagnostics-test-public-1": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "aurora-store-public-1": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "retroarch-public-1": "REPLACE_WITH_64_LOWERCASE_HEX"
+  }
+}

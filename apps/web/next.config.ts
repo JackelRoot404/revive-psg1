@@ -1,30 +1,12 @@
 import type { NextConfig } from "next";
 
-const localDevelopment = process.env.NODE_ENV === "development";
-const connectSources = localDevelopment ? "'self' https: http://localhost:8080 ws://localhost:*" : "'self' https:";
-const scriptSources = `'self' 'unsafe-inline' 'wasm-unsafe-eval'${localDevelopment ? " 'unsafe-eval'" : ""}`;
-const securityHeaders = [
-  { key: "Content-Security-Policy", value: `default-src 'self'; base-uri 'self'; connect-src ${connectSources}; font-src 'self' data:; form-action 'none'; frame-ancestors 'none'; img-src 'self' data: blob:; object-src 'none'; script-src ${scriptSources}; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:${localDevelopment ? "" : "; upgrade-insecure-requests"}` },
-  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "X-Frame-Options", value: "DENY" },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), usb=(self)" }
-];
-
 const nextConfig: NextConfig = {
   output: "export",
   reactStrictMode: true,
-  poweredByHeader: false,
-  async headers() {
-    return [
-      { source: "/:path*", headers: securityHeaders },
-      { source: "/checkout/:path*", headers: [
-        { key: "Cache-Control", value: "no-store, max-age=0" },
-        { key: "Referrer-Policy", value: "no-referrer" },
-        { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" }
-      ] }
-    ];
-  }
+  // This project exports static files. Netlify is the production HTTP server,
+  // so the effective security and no-store headers live in netlify.toml rather
+  // than in Next's server-only `headers()` hook (which static export ignores).
+  poweredByHeader: false
 };
 
 export default nextConfig;

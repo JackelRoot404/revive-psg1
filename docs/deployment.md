@@ -1,5 +1,12 @@
 # Deployment
 
+> **Current release posture:** deploy and operate this service with
+> `INSTALLER_MODE=scan_only`. The code supports a future public path, but this
+> repository does not yet provide trusted PSG1 hardware attestation, production
+> release artifacts/evidence, a signed PSG1-only Windows driver, or the required
+> physical Windows/macOS validation. Setting an environment variable cannot
+> create those prerequisites.
+
 ## Netlify
 
 Connect the repository root. `netlify.toml` builds the `@revive-psg1/web` workspace and lets Netlify's current Next.js adapter package the application. Configure only:
@@ -7,8 +14,11 @@ Connect the repository root. `netlify.toml` builds the `@revive-psg1/web` worksp
 - `NEXT_PUBLIC_SITE_URL=https://revivepsg.com`
 - `NEXT_PUBLIC_API_URL=https://api.revivepsg.com`
 - `NEXT_PUBLIC_SOLANA_RPC_URL=<public browser-safe mainnet RPC>`
-- `EARLY_ACCESS_FREE=true` while the public Early Access program is free.
-- `NEXT_PUBLIC_SALES_STATE=closed` until launch review (`beta` or `public` afterward).
+- Do not set a browser environment driver URL. When a future public release is
+  ready, the wizard can expose a Windows driver link only after it verifies an
+  active signed release envelope's exact package URL, hardware IDs, catalog
+  hash, installer hash, and Authenticode signer. No production driver package
+  is included in this repository.
 - Signed HTTPS `NEXT_PUBLIC_MACOS_DOWNLOAD_URL` and `NEXT_PUBLIC_WINDOWS_DOWNLOAD_URL` only after publisher-signature verification.
 - `NEXT_PUBLIC_LEGAL_ENTITY=biccsdev` and `NEXT_PUBLIC_SUPPORT_URL=https://discord.gg/QWYxkJgEHH`.
 - Counsel-approved `NEXT_PUBLIC_GOVERNING_LAW`, `NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE`, and `NEXT_PUBLIC_DATA_RETENTION_POLICY`.
@@ -35,16 +45,40 @@ Before the first deployment:
 
 Beta runs one container. Public launch should change App Platform scaling to minimum 2, maximum 10, with request autoscaling around 25 requests/second per instance. Alert when P95 exceeds 500 ms; App Platform autoscaling itself should use the supported CPU/request metric available for the selected plan. The PostgreSQL client caps each instance at ten connections.
 
-Run migrations as a one-off job with the migration role, not from every web process:
+Run migrations as a one-off job with the migration role, not from every web process.
+Local Docker can use `npm run db:migrate` (`drizzle-kit`). DigitalOcean managed
+Postgres cannot create Drizzle's bookkeeping schema, so production must build
+the API and apply the idempotent runtime migrator instead:
 
 ```bash
-npm run db:migrate
+npm run build -w @revive-psg1/api
+npm run db:migrate:runtime -w @revive-psg1/api
 npm run db:seed -w @revive-psg1/api
 ```
 
-Keep `EARLY_ACCESS_FREE=true` on both Netlify and the API during free Early Access. The API remains authoritative: supported devices receive an atomic zero-value `early_access` entitlement and paid verification is bypassed. To return the product to paid mode, set `EARLY_ACCESS_FREE=false` on both deployments; no code or database change is required.
+The website has no installation feature flag. The API remains authoritative:
+`INSTALLER_MODE=scan_only` shows read-only results and denies activation, new
+installation, destructive boundaries, and artifact downloads.
+`INSTALLER_MODE=public` is implemented as the future free, device-bound path
+for a stock-locked, preflight-passing PSG1 with a matching signed public release;
+it must not be enabled until trusted hardware attestation is in place. Browser
+USB/ADB/Fastboot observations and the cross-mode serial match are not that
+attestation.
 
-Set `PUBLIC_SALES_ENABLED=true` only after two reviewers approve launch evidence and free Early Access has ended. This flag is necessary but insufficient: the API also requires every row in `launch_gate_checks` to be passed. The web source-level same-computer checkout gate and `NEXT_PUBLIC_SALES_STATE` are reviewed separately.
+`INSTALLER_NEW_STARTS_ENABLED=false` is the runtime emergency brake for new
+destructive boundaries; it preserves only an exact, authenticated resume for a
+device that already crossed its recorded boundary. A Fastboot-only recovery
+also needs the rotating, expiring resume credential stored in the same-origin
+browser journal and can restore only the existing release binding.
+
+Do not set `INSTALLER_MODE=public` until the signed profile, production release,
+private artifact objects, public evidence, trusted hardware-attestation service,
+and PSG1-only Windows driver package described in
+[`universal-public-release.md`](universal-public-release.md) are present and
+the physical-host test evidence has passed independent review.
+
+Public sales remain disabled. The public installer has no checkout, wallet, or
+payment path.
 
 ## DNS and traffic
 
@@ -59,7 +93,8 @@ Restore the database into a disposable cluster quarterly, test artifact presigni
 
 - Check `/healthz`, then run read-only supported and unsupported scans against staging.
 - Confirm CORS rejects an unlisted origin and accepts only exact production Netlify origins.
-- Confirm checkout uses `no-store`, removes URL fragments immediately, serves CSP, and rejects a copied URL without browser-instance/desktop proof.
+- Confirm the wizard uses `no-store`, serves CSP, and rejects copied or expired browser-session tokens.
 - Confirm PostgreSQL CA/hostname validation, trusted-source blocking, role restrictions, PITR, and a disposable restore.
 - Confirm private URLs expire, support range requests, and never send artifact bytes through API containers.
-- Keep checkout/downloads off if any check fails. Roll back the application revision; never mutate a signed artifact in place.
+- Confirm `scan_only` denies public activation, new boundaries, Fastboot-only resume tokens for unstarted devices, and artifact downloads even when signed templates exist.
+- Keep new installation/downloads off if any check fails. Roll back the application revision; never mutate a signed artifact in place.

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import canonicalize from "canonicalize";
 import Fastify, { type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
@@ -13,8 +14,10 @@ import {
   DEVELOPMENT_FIXTURE_DEVICE_ID,
   DEVELOPMENT_FIXTURE_PROFILE_ID,
   DEVELOPMENT_MODIFIED_PROFILE_ID,
+  INSTALLATION_RESUME_CREDENTIAL_TTL_SECONDS,
   LICENSE_PRICE_USDC,
   SESSION_TTL_SECONDS,
+  WEB_INSTALLER_SESSION_TTL_SECONDS,
   SOLANA_USDC_MINT,
   TREASURY_WALLET,
   USDC_AMOUNT_BASE_UNITS,
@@ -26,15 +29,18 @@ import {
   compatibilityReportSchema,
   crashReportSchema,
   deviceIdSchema,
-  earlyAccessActivateSchema,
   entitlementRecoverySchema,
+  fastbootResumeSchema,
   isExactDevelopmentFixture,
   isSafeDevelopmentModifiedScan,
+  installationJournalEntrySchema,
   installationStartSchema,
   licenseClaimMessage,
   licenseClaimSchema,
   orderCreateSchema,
   orderVerifySchema,
+  publicActivateSchema,
+  publicResumeSchema,
   refundRequestSchema,
   releaseManifestSchema,
   sessionCreateSchema,
@@ -45,11 +51,14 @@ import {
   webInstallerChallengeRequestSchema,
   webInstallerVerifySchema,
   webInstallerWalletChallengeMessage,
+  webCompatibilitySnapshotSchema,
   webCheckoutWalletChallengeMessage,
   webSessionCreateSchema,
+  webSessionDecisionSchema,
   webSessionProofMessage,
   uuidSchema
 } from "@revive-psg1/contracts";
+import type { CompatibilityProfile, InstallationJournalEntry, ReleaseManifest, WebCompatibilitySnapshot, WebSessionDecision } from "@revive-psg1/contracts";
 import type { Config } from "./config";
 import type { Database } from "./db/client";
 import {
@@ -59,6 +68,7 @@ import {
   compatibilityReports,
   crashReports,
   devices,
+  installationJournalEntries,
   launchGateChecks,
   licenses,
   orders,
@@ -70,7 +80,7 @@ import {
   walletChallenges
 } from "./db/schema";
 import { audit } from "./audit";
-import { profileMatches, verifySignedDocument, webPreflightMatches, webProfileMatches } from "./profiles";
+import { profileMatches, selectHighestPriorityProfile, type ProfileSelection, verifySignedDocument, webPreflightBlockers, webProfileMatches } from "./profiles";
 import { SolanaPaymentVerifier } from "./payment";
 import { bearerToken, randomNonce, randomSolanaAddress, safeEqualHex, sha256, TokenService, verifyEd25519Base58 } from "./security";
 import { ArtifactStorage } from "./storage";
@@ -116,7 +126,10 @@ export async function buildApp(dependencies: Dependencies) {
   });
   await app.register(rateLimit, { max: 60, timeWindow: "1 minute", ...(redis ? { redis } : {}) });
   app.addHook("onRequest", async (request, reply) => {
-    if (config.betaBrowserInstaller && isLegacyCommerceOrRecoveryPath(request.url)) {
+    // The former paid/wallet flow does not meet the public installer’s
+    // device-state and release-evidence gates. Keep it unavailable rather
+    // than allowing it to become an alternate entitlement path in any mode.
+    if (isLegacyCommerceOrRecoveryPath(request.url)) {
       return reply.code(404).send({ code: "BETA_ONLY_ROUTE_DISABLED" });
     }
   });
@@ -142,12 +155,13 @@ export async function buildApp(dependencies: Dependencies) {
       return reply.code(401).send({ code: "INVALID_PAIRING_PROOF", message: "Desktop pairing proof is invalid" });
     }
     const activeProfiles = await db.select().from(compatibilityProfiles).where(eq(compatibilityProfiles.active, true));
-    const matched = activeProfiles.find((row) => {
-      const parsed = compatibilityProfileSchema.safeParse({ ...(row.signedDocument as object), signature: row.signature });
-      return parsed.success
-        && verifySignedDocument(row.signedDocument, row.signature, config.releasePublicKeyPem)
-        && profileMatches(parsed.data, input.compatibility);
-    });
+    const verifiedProfiles = verifiedCompatibilityProfiles(activeProfiles, config);
+    const selection = selectHighestPriorityProfile(
+      verifiedProfiles.filter(({ profile }) => profileMatches(profile, input.compatibility)).map(({ profile }) => profile)
+    );
+    const matched = selection.status === "matched"
+      ? verifiedProfiles.find(({ profile }) => profile.id === selection.profile.id)
+      : undefined;
     const id = randomUUID();
     const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
     try {
@@ -160,7 +174,7 @@ export async function buildApp(dependencies: Dependencies) {
         hostOs: input.hostOs,
         channel: "desktop",
         compatibility: input.compatibility,
-        profileId: matched?.id,
+        profileId: matched?.profile.id,
         supported: Boolean(matched),
         expiresAt
       });
@@ -170,11 +184,19 @@ export async function buildApp(dependencies: Dependencies) {
     }
     const desktopToken = await tokens.issueSessionToken({ audience: "desktop-session", subject: input.pairingPublicKey, sessionId: id, deviceId: input.deviceId });
     const checkoutToken = await tokens.issueSessionToken({ audience: "checkout", subject: id, sessionId: id, deviceId: input.deviceId });
-    await audit(db, "session.created", { actor: input.deviceId, subjectId: id, payload: { supported: Boolean(matched), profileId: matched?.id } });
+    await audit(db, "session.created", {
+      actor: input.deviceId,
+      subjectId: id,
+      payload: {
+        supported: Boolean(matched),
+        profileId: matched?.profile.id,
+        profileSelection: selection.status
+      }
+    });
     return reply.code(201).send({
       sessionId: id,
       supported: Boolean(matched),
-      profileId: matched?.id ?? null,
+      profileId: matched?.profile.id ?? null,
       profile: matched?.signedDocument ?? null,
       profileSignature: matched?.signature ?? null,
       desktopToken,
@@ -204,17 +226,30 @@ export async function buildApp(dependencies: Dependencies) {
       return reply.code(401).send({ code: "INVALID_PAIRING_PROOF", message: "Web pairing proof is invalid" });
     }
     const activeProfiles = developmentFixture || developmentModified ? [] : await db.select().from(compatibilityProfiles).where(eq(compatibilityProfiles.active, true));
-    const matched = activeProfiles.find((row) => {
-      const parsed = compatibilityProfileSchema.safeParse({ ...(row.signedDocument as object), signature: row.signature });
-      return parsed.success
-        && verifySignedDocument(row.signedDocument, row.signature, config.releasePublicKeyPem)
-        && webProfileMatches(parsed.data, input.compatibility)
-        && webPreflightMatches(parsed.data, input.compatibility);
+    const verifiedProfiles = verifiedCompatibilityProfiles(activeProfiles, config);
+    const selection = selectHighestPriorityProfile(
+      verifiedProfiles.filter(({ profile }) => webProfileMatches(profile, input.compatibility)).map(({ profile }) => profile)
+    );
+    const matched = selection.status === "matched"
+      ? verifiedProfiles.find(({ profile }) => profile.id === selection.profile.id)
+      : undefined;
+    const preflightBlockers = matched ? webPreflightBlockers(matched.profile, input.compatibility) : [];
+    const profileId = developmentFixture ? DEVELOPMENT_FIXTURE_PROFILE_ID : developmentModified ? DEVELOPMENT_MODIFIED_PROFILE_ID : matched?.profile.id;
+    const supported = developmentFixture || developmentModified || Boolean(matched && preflightBlockers.length === 0);
+    const publicReleaseReady = config.installerMode === "public" && Boolean(profileId) && !developmentFixture && !developmentModified && Boolean(matched)
+      ? await publicReleaseReadyForProfile(db, config, profileId!, input.appVersion)
+      : false;
+    const decision = buildWebSessionDecision({
+      selection,
+      snapshot: input.compatibility,
+      installerMode: config.installerMode,
+      preflightBlockers,
+      developmentRecognized: developmentFixture || developmentModified,
+      publicReleaseReady,
+      installerNewStartsEnabled: config.installerNewStartsEnabled
     });
-    const profileId = developmentFixture ? DEVELOPMENT_FIXTURE_PROFILE_ID : developmentModified ? DEVELOPMENT_MODIFIED_PROFILE_ID : matched?.id;
-    const supported = developmentFixture || developmentModified || Boolean(matched);
     const id = randomUUID();
-    const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
+    const expiresAt = new Date(Date.now() + WEB_INSTALLER_SESSION_TTL_SECONDS * 1000);
     try {
       await db.insert(sessions).values({
         id,
@@ -237,7 +272,8 @@ export async function buildApp(dependencies: Dependencies) {
       audience: "browser-checkout",
       subject: input.pairingPublicKey,
       sessionId: id,
-      deviceId: input.deviceId
+      deviceId: input.deviceId,
+      expiresAt
     });
     await audit(db, "session.created", { actor: input.deviceId, subjectId: id, payload: { channel: "web", supported, profileId, developmentFixture, developmentModified } });
     return reply.code(201).send({
@@ -248,30 +284,82 @@ export async function buildApp(dependencies: Dependencies) {
       profileId: profileId ?? null,
       profile: matched?.signedDocument ?? null,
       profileSignature: matched?.signature ?? null,
+      decision,
       browserToken,
       expiresAt: expiresAt.toISOString()
     });
   });
 
-  app.post("/v1/early-access/activate", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
-    if (config.betaBrowserInstaller) return reply.code(403).send({ code: "BETA_CODE_REQUIRED" });
-    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
+  // This endpoint intentionally returns no artifact URL or entitlement. It is
+  // only a way for a Windows user whose first Fastboot picker is empty to
+  // obtain the driver metadata from a release envelope the browser can verify
+  // with the offline release key. An environment URL must never replace it.
+  app.get("/v1/public/windows-fastboot-driver", async (_request, reply) => {
+    if (config.installerMode !== "public") return reply.code(404).send({ code: "PUBLIC_INSTALLER_NOT_AVAILABLE" });
+    const candidates = (await signedStableReleaseCandidates(db, config, "new_start"))
+      .filter((release) => publicManifestEvidenceReady(release.manifest));
+    const keyForDriver = (release: ActiveSignedStableRelease) => JSON.stringify(release.manifest.publicEvidence?.windowsFastbootDriver ?? null);
+    const uniqueDrivers = new Set(candidates.map(keyForDriver));
+    if (candidates.length === 0) return reply.code(404).send({ code: "PUBLIC_RELEASE_NOT_READY" });
+    if (uniqueDrivers.size !== 1) return reply.code(409).send({ code: "WINDOWS_DRIVER_AMBIGUOUS" });
+    const release = candidates[0]!;
+    return {
+      manifest: release.release.signedManifest,
+      signature: release.release.signature
+    };
+  });
+
+  app.post("/v1/public/activate", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
+    if (config.installerMode !== "public") {
+      return reply.code(403).send({ code: config.installerMode === "scan_only" ? "COMPATIBILITY_CHECKER_ONLY" : "PUBLIC_INSTALLER_NOT_AVAILABLE" });
+    }
+    // The explicit resume route remains available to a boundary-crossed
+    // handheld during a safety pause. This activation route is deliberately
+    // closed before authentication so it can never mint/rebind a new start.
+    if (!config.installerNewStartsEnabled) return reply.code(503).send({ code: "INSTALLER_NEW_STARTS_PAUSED" });
     const auth = await requireToken(request, tokens, "browser-checkout");
-    const input = earlyAccessActivateSchema.parse(request.body);
+    const input = publicActivateSchema.parse(request.body);
     if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
     const session = await activeSession(db, input.sessionId);
-    if (!session?.supported) return reply.code(409).send({ code: "UNSUPPORTED_FIRMWARE" });
-    if (session.channel !== "web" || auth.sub !== session.pairingPublicKey) {
-      return reply.code(403).send({ code: "WEB_PAIRING_REQUIRED" });
-    }
-    await enforceDistributedLimit(redis, `early-access:device:${session.deviceId}`, 10, 60 * 60);
-
+    if (!session || session.channel !== "web" || auth.sub !== session.pairingPublicKey) return reply.code(403).send({ code: "WEB_PAIRING_REQUIRED" });
     let license = await activeLicenseForDevice(db, session.deviceId);
-    if (license && !config.earlyAccessFree) {
-      const [existingOrder] = await db.select({ kind: orders.kind }).from(orders).where(eq(orders.id, license.orderId)).limit(1);
-      if (!earlyAccessAllowed(config.earlyAccessFree, existingOrder?.kind)) return reply.code(404).send({ code: "EARLY_ACCESS_DISABLED" });
+    // A boundary-crossed device must retain its original release binding even
+    // if a newer public release now serves the same profile. Do not route it
+    // through the new-start availability check.
+    if (license?.modificationStartedAt) {
+      if (!hasInstallationBinding(license)) return reply.code(409).send({ code: "INSTALLATION_BINDING_MISSING" });
+      const release = await activeSignedReleaseForInstallationBinding(db, config, installationBindingOf(license));
+      if (!release || !evidenceReadyForResume(release.manifest)) return reply.code(409).send({ code: "RESUME_RELEASE_UNAVAILABLE" });
+      const webInstallerToken = await tokens.issueSessionToken({
+        audience: "web-installer", subject: license.id, sessionId: session.id, deviceId: session.deviceId, expiresAt: session.expiresAt
+      });
+      await audit(db, "public.resumed", {
+        actor: session.deviceId,
+        subjectId: license.id,
+        payload: { profileId: license.installationProfileId, releaseVersion: license.installationReleaseVersion, source: "activate-existing" }
+      });
+      return reply.code(200).send({
+        activation: "public_resume", resume: true, free: true, deviceBound: true, alreadyLicensed: true,
+        licenseId: license.id, orderId: license.orderId, webInstallerToken,
+        expiresInSeconds: Math.max(1, Math.floor((session.expiresAt.getTime() - Date.now()) / 1000))
+      });
     }
-    if (!license && !earlyAccessAllowed(config.earlyAccessFree)) return reply.code(404).send({ code: "EARLY_ACCESS_DISABLED" });
+    // All fresh activity—including an already-created free entitlement that
+    // has not crossed the boundary—must be re-evaluated against the current
+    // signed profile set. A later, higher-priority variant profile cannot be
+    // bypassed with a stale universal-profile scan.
+    const currentProfile = await revalidateCurrentWebProfile(db, config, session);
+    if (!currentProfile || !session.profileId) return reply.code(409).send({ code: "SESSION_PROFILE_CHANGED" });
+    if (!isPassingStockLockedWebSession(session, currentProfile.profile.id)) return reply.code(409).send({ code: "DESTRUCTIVE_TEST_MODE_BLOCKED" });
+    const publicRelease = await activeSignedStableRelease(db, config, currentProfile.profile.id);
+    if (!publicRelease || !publicManifestEvidenceReady(publicRelease.manifest)) {
+      return reply.code(503).send({ code: "PUBLIC_RELEASE_NOT_READY" });
+    }
+    if (!installerVersionSatisfies(session.appVersion, publicRelease.manifest.minimumInstallerVersion)) {
+      return reply.code(409).send({ code: "INSTALLER_UPDATE_REQUIRED" });
+    }
+    await enforceDistributedLimit(redis, `public-activate:ip:${request.ip}`, 10, 60 * 60);
+    await enforceDistributedLimit(redis, `public-activate:device:${session.deviceId}`, 5, 60 * 60);
 
     let created = false;
     if (!license) {
@@ -280,12 +368,11 @@ export async function buildApp(dependencies: Dependencies) {
       try {
         await db.transaction(async (tx) => {
           await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${session.deviceId}, 0))`);
-          const [raceWinner] = await tx.select({ id: licenses.id }).from(licenses).where(and(
+          const [existingLicense] = await tx.select({ id: licenses.id }).from(licenses).where(and(
             eq(licenses.deviceId, session.deviceId),
             eq(licenses.status, "active")
           )).limit(1);
-          if (raceWinner) return;
-          if (!session.profileId) throw apiError("SESSION_PROFILE_MISSING", 409);
+          if (existingLicense) return;
           await tx.insert(orders).values({
             id: orderId,
             sessionId: session.id,
@@ -301,12 +388,12 @@ export async function buildApp(dependencies: Dependencies) {
           });
           await tx.insert(devices).values({
             id: session.deviceId,
-            profileId: session.profileId,
+            profileId: currentProfile.profile.id,
             serialVerified: true,
             licensedAt: new Date()
           }).onConflictDoUpdate({
             target: devices.id,
-            set: { profileId: session.profileId, serialVerified: true, lastSeenAt: new Date(), licensedAt: new Date() }
+            set: { profileId: currentProfile.profile.id, serialVerified: true, lastSeenAt: new Date(), licensedAt: new Date() }
           });
           await tx.insert(licenses).values({
             id: licenseId,
@@ -321,28 +408,124 @@ export async function buildApp(dependencies: Dependencies) {
       }
       license = await activeLicenseForDevice(db, session.deviceId);
     }
-    if (!license) throw new Error("Early Access activation did not produce an active device entitlement");
-
+    if (!license) throw new Error("Public activation did not produce an active device entitlement");
+    if (!license.modificationStartedAt) {
+      await db.update(devices).set({
+        profileId: currentProfile.profile.id,
+        serialVerified: true,
+        lastSeenAt: new Date(),
+        licensedAt: new Date()
+      }).where(eq(devices.id, session.deviceId));
+    }
     const webInstallerToken = await tokens.issueSessionToken({
       audience: "web-installer",
       subject: license.id,
       sessionId: session.id,
       deviceId: session.deviceId,
-      expiresIn: "10m"
+      expiresAt: session.expiresAt
     });
-    await audit(db, created ? "early_access.activated" : "early_access.restored", {
+    await audit(db, created ? "public.activated" : "public.resumed", {
       actor: session.deviceId,
       subjectId: license.id,
-      payload: { orderId: license.orderId }
+      payload: { orderId: license.orderId, profileId: currentProfile.profile.id }
     });
     return reply.code(created ? 201 : 200).send({
-      earlyAccessFree: true,
+      activation: "public_free",
+      free: true,
+      deviceBound: true,
       alreadyLicensed: !created,
+      licenseId: license.id,
       orderId: license.orderId,
+      webInstallerToken,
+      expiresInSeconds: Math.max(1, Math.floor((session.expiresAt.getTime() - Date.now()) / 1000))
+    });
+  });
+
+  // A public installation can be resumed only after a destructive boundary
+  // was already recorded for this same cross-mode-verified device. This route
+  // deliberately accepts a post-unlock/modified scan: the authorization is
+  // tied to the existing immutable release binding, not to a fresh install.
+  app.post("/v1/public/resume", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
+    const auth = await requireToken(request, tokens, "browser-checkout");
+    const input = publicResumeSchema.parse(request.body);
+    if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
+    const session = await activeSession(db, input.sessionId);
+    if (!session || session.channel !== "web" || auth.sub !== session.pairingPublicKey) {
+      return reply.code(403).send({ code: "WEB_PAIRING_REQUIRED" });
+    }
+    if (!hasCrossModeWebScanProof(session)) return reply.code(409).send({ code: "DESTRUCTIVE_TEST_MODE_BLOCKED" });
+    const license = await activeLicenseForDevice(db, session.deviceId);
+    if (!license?.modificationStartedAt || !hasInstallationBinding(license)) {
+      return reply.code(404).send({ code: "PUBLIC_RESUME_NOT_FOUND" });
+    }
+    const release = await activeSignedReleaseForInstallationBinding(db, config, installationBindingOf(license));
+    if (!release || !evidenceReadyForResume(release.manifest)) {
+      return reply.code(409).send({ code: "RESUME_RELEASE_UNAVAILABLE" });
+    }
+    const webInstallerToken = await tokens.issueSessionToken({
+      audience: "web-installer",
+      subject: license.id,
+      sessionId: session.id,
+      deviceId: session.deviceId,
+      expiresAt: session.expiresAt
+    });
+    await audit(db, "public.resumed", {
+      actor: session.deviceId,
+      subjectId: license.id,
+      payload: { profileId: license.installationProfileId, releaseVersion: license.installationReleaseVersion, source: "resume" }
+    });
+    return {
+      activation: "public_resume",
+      resume: true,
       licenseId: license.id,
       webInstallerToken,
-      expiresInSeconds: 600
+      expiresInSeconds: Math.max(1, Math.floor((session.expiresAt.getTime() - Date.now()) / 1000))
+    };
+  });
+
+  // A browser crash can leave the PSG1 in bootloader Fastbootd, where an ADB
+  // scan cannot be restarted. The credential below is created only at the
+  // irreversible boundary, lives only in the browser's same-origin persistent
+  // journal, rotates on use, and restores only this exact signed binding.
+  app.post("/v1/public/fastboot-resume", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
+    const input = fastbootResumeSchema.parse(request.body);
+    const license = await activeLicenseForDevice(db, input.deviceId);
+    const now = new Date();
+    if (!license?.modificationStartedAt || !hasInstallationBinding(license)
+      || !license.installationResumeCredentialDigest || !license.installationResumeCredentialExpiresAt
+      || license.installationResumeCredentialExpiresAt <= now
+      || !safeEqualHex(license.installationResumeCredentialDigest, sha256(input.resumeCredential))) {
+      return reply.code(404).send({ code: "FASTBOOT_RESUME_NOT_FOUND" });
+    }
+    const release = await activeSignedReleaseForInstallationBinding(db, config, installationBindingOf(license));
+    if (!release || !evidenceReadyForResume(release.manifest)) {
+      return reply.code(409).send({ code: "RESUME_RELEASE_UNAVAILABLE" });
+    }
+    const resume = await rotateInstallationResumeCredential(db, license.id);
+    const webInstallerToken = await tokens.issueSessionToken({
+      audience: "web-installer-resume", subject: license.id, sessionId: `fastboot-resume:${license.id}`,
+      deviceId: license.deviceId, expiresIn: "15m"
     });
+    await audit(db, "public.resumed", {
+      payload: { source: "durable-fastboot-resume", releaseVersion: license.installationReleaseVersion }
+    });
+    return {
+      activation: "public_resume",
+      resume: true,
+      licenseId: license.id,
+      webInstallerToken,
+      resumeCredential: resume.credential,
+      resumeCredentialExpiresAt: resume.expiresAt.toISOString(),
+      expiresInSeconds: 15 * 60
+    };
+  });
+
+  app.post("/v1/early-access/activate", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
+    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
+    if (config.installerMode === "private_beta") return reply.code(403).send({ code: "BETA_CODE_REQUIRED" });
+    // This legacy endpoint lacks the public release-evidence and stock-locked
+    // checks above, so it must never become an alternate public entitlement.
+    return reply.code(403).send({ code: "PUBLIC_ACTIVATION_REQUIRED" });
   });
 
   // A Discord code is intentionally not a generic coupon. It becomes bound
@@ -350,6 +533,8 @@ export async function buildApp(dependencies: Dependencies) {
   // transaction, and can never be used again.
   app.post("/v1/beta/activate", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
     if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
+    if (config.installerMode !== "private_beta") return reply.code(403).send({ code: "PRIVATE_BETA_MODE_REQUIRED" });
+    if (!config.installerNewStartsEnabled) return reply.code(503).send({ code: "INSTALLER_NEW_STARTS_PAUSED" });
     const auth = await requireToken(request, tokens, "browser-checkout");
     const input = betaActivateSchema.parse(request.body);
     if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
@@ -358,7 +543,7 @@ export async function buildApp(dependencies: Dependencies) {
     if (session.channel !== "web" || auth.sub !== session.pairingPublicKey) return reply.code(403).send({ code: "WEB_PAIRING_REQUIRED" });
     const state = (session.compatibility as { installationState?: string }).installationState;
     if (state !== "stock_locked") return reply.code(409).send({ code: "DESTRUCTIVE_TEST_MODE_BLOCKED" });
-    const releaseReadiness = await betaReleaseReadiness(db, config);
+    const releaseReadiness = await betaReleaseReadiness(db, config, session.profileId ?? undefined);
     if (!releaseReadiness) return reply.code(503).send({ code: "BETA_RELEASE_NOT_READY" });
     await enforceDistributedLimit(redis, `beta-code:ip:${request.ip}`, 10, 60 * 60);
     await enforceDistributedLimit(redis, `beta-code:device:${session.deviceId}`, 5, 60 * 60);
@@ -414,10 +599,10 @@ export async function buildApp(dependencies: Dependencies) {
     }
     if (!license) throw new Error("Beta activation did not produce a device entitlement");
     const webInstallerToken = await tokens.issueSessionToken({
-      audience: "web-installer", subject: license.id, sessionId: session.id, deviceId: session.deviceId, expiresIn: "2h"
+      audience: "web-installer", subject: license.id, sessionId: session.id, deviceId: session.deviceId, expiresAt: session.expiresAt
     });
     await audit(db, created ? "beta.activated" : "beta.resumed", { actor: session.deviceId, subjectId: license.id, payload: { orderId: license.orderId } });
-    return reply.code(created ? 201 : 200).send({ licenseId: license.id, orderId: license.orderId, webInstallerToken, expiresInSeconds: 7200 });
+    return reply.code(created ? 201 : 200).send({ licenseId: license.id, orderId: license.orderId, webInstallerToken, expiresInSeconds: Math.max(1, Math.floor((session.expiresAt.getTime() - Date.now()) / 1000)) });
   });
 
   // A device-bound beta entitlement may be resumed after a reload or USB
@@ -425,6 +610,7 @@ export async function buildApp(dependencies: Dependencies) {
   // still proves possession of the same cross-checked hardware identifier.
   app.post("/v1/beta/resume", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
     if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
+    if (config.installerMode !== "private_beta") return reply.code(403).send({ code: "PRIVATE_BETA_MODE_REQUIRED" });
     const auth = await requireToken(request, tokens, "browser-checkout");
     const input = betaResumeSchema.parse(request.body);
     if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
@@ -437,10 +623,10 @@ export async function buildApp(dependencies: Dependencies) {
     const [order] = await db.select({ kind: orders.kind, betaInviteTokenDigest: orders.betaInviteTokenDigest }).from(orders).where(eq(orders.id, license.orderId)).limit(1);
     if (order?.kind !== "early_access" || !order.betaInviteTokenDigest) return reply.code(404).send({ code: "BETA_ENTITLEMENT_NOT_FOUND" });
     const webInstallerToken = await tokens.issueSessionToken({
-      audience: "web-installer", subject: license.id, sessionId: session.id, deviceId: session.deviceId, expiresIn: "2h"
+      audience: "web-installer", subject: license.id, sessionId: session.id, deviceId: session.deviceId, expiresAt: session.expiresAt
     });
     await audit(db, "beta.resumed", { actor: session.deviceId, subjectId: license.id, payload: { orderId: license.orderId, source: "resume" } });
-    return { licenseId: license.id, webInstallerToken, expiresInSeconds: 7200 };
+    return { licenseId: license.id, webInstallerToken, expiresInSeconds: Math.max(1, Math.floor((session.expiresAt.getTime() - Date.now()) / 1000)) };
   });
 
   app.post("/v1/sessions/:id/browser-proof/challenge", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
@@ -928,31 +1114,182 @@ export async function buildApp(dependencies: Dependencies) {
   });
 
   app.post("/v1/licenses/:id/installation-started", async (request, reply) => {
-    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
-    const auth = await verifyInstallerAccess(request, tokens);
+    const { auth, session } = await requireActiveWebInstallerAccess(request, tokens, db);
     const id = uuidSchema.parse((request.params as { id: string }).id);
     const acknowledgement = installationStartSchema.parse(request.body);
     if (auth.sub !== id) return reply.code(403).send({ code: "LICENSE_MISMATCH" });
     const [current] = await db.select().from(licenses).where(and(eq(licenses.id, id), eq(licenses.status, "active"))).limit(1);
     if (!current || auth.deviceId !== current.deviceId) return reply.code(404).send({ code: "LICENSE_NOT_FOUND" });
-    const currentSessionId = typeof auth.sessionId === "string" ? auth.sessionId : undefined;
-    const [origin] = currentSessionId
-      ? await db.select({ compatibility: sessions.compatibility }).from(sessions).where(eq(sessions.id, currentSessionId)).limit(1)
-      : await db.select({ compatibility: sessions.compatibility }).from(orders)
-        .innerJoin(sessions, eq(sessions.id, orders.sessionId))
-        .where(eq(orders.id, current.orderId)).limit(1);
-    const installationState = (origin?.compatibility as { installationState?: string } | undefined)?.installationState;
-    if (installationState === "already_modified" || installationState === "development_fixture") {
+    const [device] = await db.select({ profileId: devices.profileId }).from(devices).where(eq(devices.id, current.deviceId)).limit(1);
+
+    // Repeated calls after the irreversible boundary are not new starts. They
+    // only succeed if the client presents exactly the already-bound signed
+    // profile/release/artifact map, which keeps an emergency pause resumable.
+    if (current.modificationStartedAt) {
+      if (!hasInstallationBinding(current)) return reply.code(409).send({ code: "INSTALLATION_BINDING_MISSING" });
+      if (!installationBindingMatchesStartInput(installationBindingOf(current), acknowledgement)) {
+        return reply.code(409).send({ code: "INSTALLATION_BINDING_MISMATCH" });
+      }
+      const release = await activeSignedReleaseForInstallationBinding(db, config, installationBindingOf(current));
+      if (!release || !evidenceReadyForResume(release.manifest)) return reply.code(409).send({ code: "RESUME_RELEASE_UNAVAILABLE" });
+      const resume = await rotateInstallationResumeCredential(db, current.id);
+      return {
+        modificationStartedAt: current.modificationStartedAt.toISOString(), resumed: true,
+        resumeCredential: resume.credential, resumeCredentialExpiresAt: resume.expiresAt.toISOString()
+      };
+    }
+
+    if (!session) return reply.code(403).send({ code: "INSTALLER_SESSION_REQUIRED" });
+    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
+    if (!config.installerNewStartsEnabled) return reply.code(503).send({ code: "INSTALLER_NEW_STARTS_PAUSED" });
+    const currentProfile = await revalidateCurrentWebProfile(db, config, session);
+    if (!currentProfile || currentProfile.profile.id !== acknowledgement.profileId) {
+      return reply.code(409).send({ code: "SESSION_PROFILE_CHANGED" });
+    }
+    if (!isPassingStockLockedWebSession(session, currentProfile.profile.id)
+      || !device?.profileId || device.profileId !== acknowledgement.profileId) {
       return reply.code(409).send({ code: "DESTRUCTIVE_TEST_MODE_BLOCKED" });
     }
-    if (current.modificationStartedAt) return { modificationStartedAt: current.modificationStartedAt.toISOString() };
-    const result = await db.update(licenses).set({ modificationStartedAt: new Date() }).where(and(eq(licenses.id, id), eq(licenses.status, "active"), isNull(licenses.modificationStartedAt))).returning();
+    const release = await activeSignedStableRelease(db, config, acknowledgement.profileId);
+    if (!release || !releaseBindingMatchesStart(release, acknowledgement)) {
+      return reply.code(409).send({ code: "INSTALLATION_RELEASE_MISMATCH" });
+    }
+    if (!installerVersionSatisfies(session.appVersion, release.manifest.minimumInstallerVersion)) {
+      return reply.code(409).send({ code: "INSTALLER_UPDATE_REQUIRED" });
+    }
+    if (config.installerMode === "public" && !publicManifestEvidenceReady(release.manifest)) {
+      return reply.code(503).send({ code: "PUBLIC_RELEASE_NOT_READY" });
+    }
+    if (config.installerMode === "private_beta" && !betaManifestEvidenceReady(release.manifest)) {
+      return reply.code(503).send({ code: "BETA_RELEASE_NOT_READY" });
+    }
+    const manifestSha256 = canonicalSignedManifestSha256(release);
+    if (!manifestSha256) return reply.code(409).send({ code: "INSTALLATION_RELEASE_MISMATCH" });
+    const resume = newInstallationResumeCredential();
+    const resumeExpiresAt = new Date(Date.now() + INSTALLATION_RESUME_CREDENTIAL_TTL_SECONDS * 1000);
+    const result = await db.update(licenses).set({
+      modificationStartedAt: new Date(),
+      installationProfileId: acknowledgement.profileId,
+      installationProfileDocument: currentProfile.signedDocument,
+      installationProfileSignature: currentProfile.signature,
+      installationReleaseId: release.release.id,
+      installationReleaseVersion: acknowledgement.releaseVersion,
+      installationManifestSha256: manifestSha256,
+      installationArtifactHashes: acknowledgement.artifactHashes,
+      installationResumeCredentialDigest: sha256(resume),
+      installationResumeCredentialExpiresAt: resumeExpiresAt
+    }).where(and(eq(licenses.id, id), eq(licenses.status, "active"), isNull(licenses.modificationStartedAt))).returning();
     if (!result.length) return reply.code(409).send({ code: "INSTALLATION_BOUNDARY_RACE" });
     await audit(db, "installation.started", {
       actor: String(auth.deviceId), subjectId: id,
       payload: { termsVersion: acknowledgement.termsVersion, irreversibleRiskAcknowledged: true }
     });
-    return { modificationStartedAt: result[0]!.modificationStartedAt?.toISOString() };
+    return {
+      modificationStartedAt: result[0]!.modificationStartedAt?.toISOString(),
+      resumeCredential: resume,
+      resumeCredentialExpiresAt: resumeExpiresAt.toISOString()
+    };
+  });
+
+  // Persist each write-ahead state independently. A browser may crash between
+  // USB transfers; retaining `intent` and `sent` lets resume treat that step
+  // as indeterminate instead of assuming a flash or unlock completed.
+  app.post("/v1/licenses/:id/installation-journal", async (request, reply) => {
+    const { auth } = await requireActiveWebInstallerAccess(request, tokens, db);
+    const id = uuidSchema.parse((request.params as { id: string }).id);
+    const entry = installationJournalEntrySchema.parse(request.body);
+    if (auth.sub !== id) return reply.code(403).send({ code: "LICENSE_MISMATCH" });
+    const [license] = await db.select().from(licenses).where(and(eq(licenses.id, id), eq(licenses.status, "active"))).limit(1);
+    if (!license || license.deviceId !== auth.deviceId) return reply.code(404).send({ code: "LICENSE_NOT_FOUND" });
+    if (!license.modificationStartedAt || !hasInstallationBinding(license)) {
+      return reply.code(409).send({ code: "INSTALLATION_NOT_STARTED" });
+    }
+    const binding = installationBindingOf(license);
+    if (!installationBindingMatchesInput(binding, entry)) {
+      return reply.code(409).send({ code: "INSTALLATION_BINDING_MISMATCH" });
+    }
+    const release = await activeSignedReleaseForInstallationBinding(db, config, binding);
+    if (!release || !evidenceReadyForResume(release.manifest)) {
+      return reply.code(409).send({ code: "RESUME_RELEASE_UNAVAILABLE" });
+    }
+    // The state-machine read/validate/write is serialised per installation.
+    // Without this lock, two restored tabs could validate against the same
+    // last record and append divergent commands that share a timestamp.
+    const journalWrite = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${license.id}, 0))`);
+      const [previous] = await tx.select({
+        sequence: installationJournalEntries.sequence,
+        stage: installationJournalEntries.stage,
+        operation: installationJournalEntries.operation,
+        operationState: installationJournalEntries.operationState,
+        operationIndex: installationJournalEntries.operationIndex,
+        operationCount: installationJournalEntries.operationCount
+      }).from(installationJournalEntries).where(eq(installationJournalEntries.licenseId, license.id))
+        .orderBy(desc(installationJournalEntries.sequence)).limit(1);
+      const transitionError = validateInstallationJournalTransition(previous ?? null, entry);
+      if (transitionError) return { transitionError };
+      const createdAt = new Date();
+      const sequence = (previous?.sequence ?? 0) + 1;
+      await tx.insert(installationJournalEntries).values({
+        id: randomUUID(),
+        sequence,
+        licenseId: license.id,
+        deviceId: license.deviceId,
+        profileId: entry.profileId,
+        releaseVersion: entry.releaseVersion,
+        artifactHashes: entry.artifactHashes,
+        stage: entry.stage,
+        operation: entry.operation,
+        operationState: entry.operationState,
+        operationIndex: entry.operationIndex,
+        operationCount: entry.operationCount,
+        createdAt
+      });
+      return { createdAt, sequence };
+    });
+    if ("transitionError" in journalWrite) {
+      return reply.code(409).send({ code: "JOURNAL_TRANSITION_INVALID", message: journalWrite.transitionError });
+    }
+    await audit(db, "installation.journaled", {
+      actor: license.deviceId,
+      subjectId: license.id,
+      payload: {
+        stage: entry.stage, operation: entry.operation, operationState: entry.operationState,
+        operationIndex: entry.operationIndex, operationCount: entry.operationCount, sequence: journalWrite.sequence, releaseVersion: entry.releaseVersion
+      }
+    });
+    return reply.code(202).send({ recordedAt: journalWrite.createdAt.toISOString(), sequence: journalWrite.sequence });
+  });
+
+  app.get("/v1/licenses/:id/installation-journal", async (request, reply) => {
+    const { auth } = await requireActiveWebInstallerAccess(request, tokens, db);
+    const id = uuidSchema.parse((request.params as { id: string }).id);
+    if (auth.sub !== id) return reply.code(403).send({ code: "LICENSE_MISMATCH" });
+    const [license] = await db.select().from(licenses).where(and(eq(licenses.id, id), eq(licenses.status, "active"))).limit(1);
+    if (!license || license.deviceId !== auth.deviceId) return reply.code(404).send({ code: "LICENSE_NOT_FOUND" });
+    if (!license.modificationStartedAt || !hasInstallationBinding(license)) {
+      return reply.code(409).send({ code: "INSTALLATION_NOT_STARTED" });
+    }
+    const [entry] = await db.select({
+      sequence: installationJournalEntries.sequence,
+      deviceId: installationJournalEntries.deviceId,
+      profileId: installationJournalEntries.profileId,
+      releaseVersion: installationJournalEntries.releaseVersion,
+      artifactHashes: installationJournalEntries.artifactHashes,
+      stage: installationJournalEntries.stage,
+      operation: installationJournalEntries.operation,
+      operationState: installationJournalEntries.operationState,
+      operationIndex: installationJournalEntries.operationIndex,
+      operationCount: installationJournalEntries.operationCount,
+      createdAt: installationJournalEntries.createdAt
+    }).from(installationJournalEntries).where(eq(installationJournalEntries.licenseId, license.id))
+      .orderBy(desc(installationJournalEntries.sequence)).limit(1);
+    return entry ? {
+      entry: {
+        ...entry,
+        updatedAt: entry.createdAt.toISOString()
+      }
+    } : { entry: null };
   });
 
   app.post("/v1/licenses/:id/refunds", async (request, reply) => {
@@ -999,10 +1336,16 @@ export async function buildApp(dependencies: Dependencies) {
   });
 
   app.get("/v1/releases/stable", async (request, reply) => {
-    if (installerBlockedInScanOnlyMode(config)) return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
-    const auth = await verifyInstallerAccess(request, tokens);
+    const { auth, session } = await requireActiveWebInstallerAccess(request, tokens, db);
     const license = await activeLicenseForDevice(db, String(auth.deviceId));
     if (!license || license.id !== auth.sub) return reply.code(403).send({ code: "LICENSE_INACTIVE" });
+    const isResume = Boolean(license.modificationStartedAt);
+    // Scan-only is both the initial public posture and the runtime emergency
+    // switch. It denies new downloads but leaves an authenticated, already
+    // started device able to retrieve only its exact signed release.
+    if (installerBlockedInScanOnlyMode(config) && !isResume) {
+      return reply.code(403).send({ code: "COMPATIBILITY_CHECKER_ONLY" });
+    }
     const [device] = await db.select().from(devices).where(eq(devices.id, license.deviceId)).limit(1);
     if (config.developmentHardwareFixture && config.nodeEnv === "development" && license.deviceId === DEVELOPMENT_FIXTURE_DEVICE_ID) {
       return {
@@ -1024,25 +1367,58 @@ export async function buildApp(dependencies: Dependencies) {
         destructiveAllowed: false
       };
     }
-    if (!device?.profileId) return reply.code(409).send({ code: "DEVICE_PROFILE_MISSING" });
-    const [profile] = await db.select().from(compatibilityProfiles).where(and(eq(compatibilityProfiles.id, device.profileId), eq(compatibilityProfiles.active, true))).limit(1);
-    if (!profile || !verifySignedDocument(profile.signedDocument, profile.signature, config.releasePublicKeyPem)) return reply.code(409).send({ code: "DEVICE_PROFILE_INACTIVE" });
-    const [release] = await db.select().from(releases).where(and(eq(releases.channel, "stable"), eq(releases.active, true))).orderBy(desc(releases.publishedAt)).limit(1);
-    if (!release || !verifySignedDocument(release.signedManifest, release.signature, config.releasePublicKeyPem)) return reply.code(404).send({ code: "NO_STABLE_RELEASE" });
-    const manifest = releaseManifestSchema.safeParse({ ...(release.signedManifest as object), signature: release.signature });
-    if (!manifest.success) return reply.code(409).send({ code: "RELEASE_MANIFEST_INVALID" });
-    if (config.betaBrowserInstaller && !betaManifestEvidenceReady(manifest.data)) return reply.code(503).send({ code: "BETA_RELEASE_NOT_READY" });
-    const privateArtifacts = manifest.data.artifacts.filter((artifact) => artifact.delivery === "private");
+    let currentProfile: VerifiedCompatibilityProfile | null = null;
+    if (!isResume) {
+      if (!session) return reply.code(403).send({ code: "INSTALLER_SESSION_REQUIRED" });
+      if (!config.installerNewStartsEnabled) return reply.code(503).send({ code: "INSTALLER_NEW_STARTS_PAUSED" });
+      currentProfile = await revalidateCurrentWebProfile(db, config, session);
+      if (!currentProfile || !device?.profileId || device.profileId !== currentProfile.profile.id) {
+        return reply.code(409).send({ code: "SESSION_PROFILE_CHANGED" });
+      }
+      if (!isPassingStockLockedWebSession(session, currentProfile.profile.id)) {
+        return reply.code(409).send({ code: "DESTRUCTIVE_TEST_MODE_BLOCKED" });
+      }
+    }
+    const profileId = isResume
+      ? (hasInstallationBinding(license) ? license.installationProfileId : undefined)
+      : currentProfile?.profile.id;
+    if (!profileId) return reply.code(409).send({ code: isResume ? "INSTALLATION_BINDING_MISSING" : "DEVICE_PROFILE_MISSING" });
+    const verifiedProfile = isResume
+      ? frozenInstallationProfile(license, config)
+      : currentProfile ?? undefined;
+    if (!verifiedProfile || verifiedProfile.profile.id !== profileId) return reply.code(409).send({ code: "DEVICE_PROFILE_INACTIVE" });
+    const release = isResume
+      ? await activeSignedReleaseForInstallationBinding(db, config, installationBindingOf(license))
+      : await activeSignedStableRelease(db, config, verifiedProfile.profile.id);
+    if (!release) return reply.code(isResume ? 409 : 404).send({ code: isResume ? "RESUME_RELEASE_UNAVAILABLE" : "NO_STABLE_RELEASE" });
+    if (!isResume && !installerVersionSatisfies(session?.appVersion ?? "", release.manifest.minimumInstallerVersion)) {
+      return reply.code(409).send({ code: "INSTALLER_UPDATE_REQUIRED" });
+    }
+    const manifest = release.manifest;
+    if (!manifest.profileIds.includes(verifiedProfile.profile.id)) return reply.code(409).send({ code: "RELEASE_PROFILE_UNSUPPORTED" });
+    if (isResume && !evidenceReadyForResume(manifest)) return reply.code(409).send({ code: "RESUME_RELEASE_UNAVAILABLE" });
+    if (!isResume && config.installerMode === "private_beta" && !betaManifestEvidenceReady(manifest)) return reply.code(503).send({ code: "BETA_RELEASE_NOT_READY" });
+    if (!isResume && config.installerMode === "public" && !publicManifestEvidenceReady(manifest)) return reply.code(503).send({ code: "PUBLIC_RELEASE_NOT_READY" });
+    const privateArtifacts = manifest.artifacts.filter((artifact) => artifact.delivery === "private");
     const downloadUrls = Object.fromEntries(await Promise.all(privateArtifacts.map(async (artifact) => [
       artifact.objectKey,
       await storage.signedDownloadUrl(artifact.objectKey)
     ])));
-    return { manifest: release.signedManifest, signature: release.signature, profile: profile.signedDocument, profileSignature: profile.signature, downloadUrls };
+    return {
+      manifest: release.release.signedManifest,
+      signature: release.release.signature,
+      profile: verifiedProfile.signedDocument,
+      profileSignature: verifiedProfile.signature,
+      downloadUrls
+    };
   });
 
   app.post("/v1/compatibility-reports", async (request, reply) => {
-    const auth = await requireToken(request, tokens, "desktop-session");
+    const auth = await requireCompatibilityReportToken(request, tokens);
     const input = compatibilityReportSchema.parse(request.body);
+    if (!compatibilityReportConsentGranted(input)) {
+      return reply.code(400).send({ code: "COMPATIBILITY_REPORT_CONSENT_REQUIRED" });
+    }
     if (auth.sessionId !== input.sessionId) return reply.code(403).send({ code: "SESSION_MISMATCH" });
     const session = await activeSession(db, input.sessionId);
     if (!session) return reply.code(404).send({ code: "SESSION_INVALID" });
@@ -1118,23 +1494,185 @@ async function requireToken(request: FastifyRequest, tokens: TokenService, audie
   return tokens.verifySessionToken(token, audience);
 }
 
-async function verifyInstallerAccess(request: FastifyRequest, tokens: TokenService) {
+async function requireCompatibilityReportToken(request: FastifyRequest, tokens: TokenService) {
+  const token = bearerToken(request.headers.authorization);
+  if (!token) throw Object.assign(new Error("Authorization required"), { statusCode: 401 });
+  try {
+    return await tokens.verifySessionToken(token, "desktop-session");
+  } catch {
+    return tokens.verifySessionToken(token, "browser-checkout");
+  }
+}
+
+async function requireActiveWebInstallerAccess(request: FastifyRequest, tokens: TokenService, db: Database) {
   const token = bearerToken(request.headers.authorization);
   if (!token) throw Object.assign(new Error("License authorization required"), { statusCode: 401, code: "LICENSE_REQUIRED" });
+  let auth;
+  let durableResume = false;
   try {
-    return await tokens.verifyLicenseToken(token);
+    auth = await tokens.verifySessionToken(token, "web-installer");
   } catch {
     try {
-      return await tokens.verifySessionToken(token, "web-installer");
+      auth = await tokens.verifySessionToken(token, "web-installer-resume");
+      durableResume = true;
     } catch {
       throw Object.assign(new Error("Installer authorization is invalid or expired"), { statusCode: 401, code: "INSTALLER_AUTH_INVALID" });
     }
   }
+  const sessionId = typeof auth.sessionId === "string" ? auth.sessionId : "";
+  const deviceId = typeof auth.deviceId === "string" ? auth.deviceId : "";
+  if (durableResume) {
+    if (!deviceId || typeof auth.sub !== "string" || !auth.sub) {
+      throw Object.assign(new Error("Installer resume authorization is invalid"), { statusCode: 401, code: "INSTALLER_AUTH_INVALID" });
+    }
+    return { auth, session: null, durableResume: true };
+  }
+  const session = sessionId ? await activeSession(db, sessionId) : undefined;
+  if (!session || session.channel !== "web" || session.deviceId !== deviceId) {
+    throw Object.assign(new Error("A fresh PSG1 browser scan is required before installation can continue"), { statusCode: 403, code: "INSTALLER_SESSION_REQUIRED" });
+  }
+  return { auth, session, durableResume: false };
+}
+
+type VerifiedCompatibilityProfile = {
+  profile: CompatibilityProfile;
+  signedDocument: unknown;
+  signature: string;
+};
+
+function verifiedCompatibilityProfiles(
+  rows: Array<typeof compatibilityProfiles.$inferSelect>,
+  config: Config
+): VerifiedCompatibilityProfile[] {
+  return rows.flatMap((row) => {
+    if (!row.signedDocument || typeof row.signedDocument !== "object" || Array.isArray(row.signedDocument)) return [];
+    const parsed = compatibilityProfileSchema.safeParse({ ...row.signedDocument, signature: row.signature });
+    if (!parsed.success
+      || parsed.data.id !== row.id
+      || !verifySignedDocument(row.signedDocument, row.signature, config.releasePublicKeyPem)) return [];
+    return [{ profile: parsed.data, signedDocument: row.signedDocument, signature: row.signature }];
+  });
+}
+
+function frozenInstallationProfile(
+  license: typeof licenses.$inferSelect,
+  config: Config
+): VerifiedCompatibilityProfile | null {
+  if (!hasInstallationBinding(license)
+    || !license.installationProfileDocument
+    || typeof license.installationProfileDocument !== "object"
+    || Array.isArray(license.installationProfileDocument)
+    || typeof license.installationProfileSignature !== "string") return null;
+  const parsed = compatibilityProfileSchema.safeParse({
+    ...license.installationProfileDocument,
+    signature: license.installationProfileSignature
+  });
+  if (!parsed.success
+    || parsed.data.id !== license.installationProfileId
+    || !verifySignedDocument(license.installationProfileDocument, license.installationProfileSignature, config.releasePublicKeyPem)) {
+    return null;
+  }
+  return {
+    profile: parsed.data,
+    signedDocument: license.installationProfileDocument,
+    signature: license.installationProfileSignature
+  };
+}
+
+/**
+ * A web scan records the observed snapshot, not an everlasting profile
+ * decision. Before any new entitlement, artifact download, or destructive
+ * boundary we select the unique highest-priority *current* signed profile
+ * again. This lets a reviewed variant override the universal profile without
+ * a stale browser session bypassing its tighter constraints.
+ */
+async function revalidateCurrentWebProfile(
+  db: Database,
+  config: Config,
+  session: typeof sessions.$inferSelect
+): Promise<VerifiedCompatibilityProfile | null> {
+  if (session.channel !== "web" || !session.profileId) return null;
+  const snapshot = webCompatibilitySnapshotSchema.safeParse(session.compatibility);
+  if (!snapshot.success) return null;
+  const rows = await db.select().from(compatibilityProfiles).where(eq(compatibilityProfiles.active, true));
+  const verified = verifiedCompatibilityProfiles(rows, config);
+  const selection = selectHighestPriorityProfile(
+    verified.filter(({ profile }) => webProfileMatches(profile, snapshot.data)).map(({ profile }) => profile)
+  );
+  if (selection.status !== "matched" || selection.profile.id !== session.profileId) return null;
+  const matched = verified.find(({ profile }) => profile.id === selection.profile.id);
+  if (!matched || webPreflightBlockers(matched.profile, snapshot.data).length) return null;
+  return matched;
+}
+
+type WebSessionDecisionInput = {
+  selection: ProfileSelection;
+  snapshot: WebCompatibilitySnapshot;
+  installerMode: Config["installerMode"];
+  preflightBlockers: string[];
+  developmentRecognized: boolean;
+  publicReleaseReady: boolean;
+  installerNewStartsEnabled: boolean;
+};
+
+export function buildWebSessionDecision(input: WebSessionDecisionInput): WebSessionDecision {
+  const profileMatched = input.developmentRecognized || input.selection.status === "matched";
+  const blockers: string[] = [];
+  if (!profileMatched) {
+    blockers.push(input.selection.status === "ambiguous" ? "PROFILE_SELECTION_AMBIGUOUS" : "PROFILE_NOT_RECOGNIZED");
+  }
+  if (profileMatched) blockers.push(...input.preflightBlockers);
+  const preflight = profileMatched && input.preflightBlockers.length === 0 ? "passed" : "blocked";
+
+  if (input.snapshot.installationState === "stock_unlocked") blockers.push("DEVICE_STATE_STOCK_UNLOCKED");
+  if (input.snapshot.installationState === "already_modified") blockers.push("DEVICE_STATE_ALREADY_MODIFIED");
+  if (input.snapshot.installationState === "development_fixture") blockers.push("DEVELOPMENT_FIXTURE_FORBIDDEN");
+
+  const deviceInstallable = input.snapshot.installationState === "stock_locked";
+  if (input.installerMode === "scan_only") blockers.push("INSTALLER_SCAN_ONLY");
+  if (input.installerMode === "private_beta") blockers.push("PRIVATE_BETA_INVITE_REQUIRED");
+  if (!input.installerNewStartsEnabled) blockers.push("INSTALLER_NEW_STARTS_PAUSED");
+  if (input.installerMode === "public" && profileMatched && preflight === "passed" && deviceInstallable && !input.publicReleaseReady) {
+    blockers.push("PUBLIC_RELEASE_NOT_READY");
+  }
+  const canInstall = profileMatched
+    && preflight === "passed"
+    && deviceInstallable
+    && input.installerMode === "public"
+    && input.publicReleaseReady
+    && input.installerNewStartsEnabled;
+
+  return webSessionDecisionSchema.parse({
+    profile: profileMatched ? "matched" : "not_recognized",
+    deviceState: input.snapshot.installationState,
+    preflight,
+    blockers: [...new Set(blockers)],
+    installerMode: input.installerMode,
+    canInstall
+  });
 }
 
 async function activeSession(db: Database, id: string) {
   const [session] = await db.select().from(sessions).where(and(eq(sessions.id, id), gt(sessions.expiresAt, new Date()))).limit(1);
   return session;
+}
+
+function isPassingStockLockedWebSession(session: typeof sessions.$inferSelect, profileId: string): boolean {
+  const compatibility = session.compatibility as Partial<WebCompatibilitySnapshot>;
+  return session.channel === "web"
+    && session.supported
+    && session.profileId === profileId
+    && compatibility.installationState === "stock_locked"
+    && hasCrossModeWebScanProof(session);
+}
+
+function hasCrossModeWebScanProof(session: typeof sessions.$inferSelect): boolean {
+  const compatibility = session.compatibility as Partial<WebCompatibilitySnapshot>;
+  return session.channel === "web"
+    && compatibility.serialVerified === true
+    && compatibility.immutableSerialVerified === true
+    && compatibility.usbStable === true
+    && compatibility.recoveryCapable === true;
 }
 
 async function activeLicenseForDevice(db: Database, deviceId: string) {
@@ -1200,7 +1738,23 @@ async function publicSaleReady(db: Database): Promise<boolean> {
 }
 
 export function installerBlockedInScanOnlyMode(config: Config): boolean {
-  return config.compatibilityCheckerOnly || !config.betaBrowserInstaller;
+  return config.installerMode === "scan_only";
+}
+
+/** Numeric semver comparison for the browser protocol version, including builds such as 0.3.0-browser. */
+export function installerVersionSatisfies(current: string, minimum: string): boolean {
+  const parse = (value: string): [number, number, number] | null => {
+    const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$/u.exec(value);
+    if (!match) return null;
+    const parts = match.slice(1, 4).map((part) => Number.parseInt(part, 10));
+    return parts.every(Number.isSafeInteger) ? parts as [number, number, number] : null;
+  };
+  const actual = parse(current);
+  const required = parse(minimum);
+  if (!actual || !required) return false;
+  return actual[0] > required[0]
+    || (actual[0] === required[0] && actual[1] > required[1])
+    || (actual[0] === required[0] && actual[1] === required[1] && actual[2] >= required[2]);
 }
 
 function isLegacyCommerceOrRecoveryPath(url: string): boolean {
@@ -1210,22 +1764,331 @@ function isLegacyCommerceOrRecoveryPath(url: string): boolean {
     || /^\/v1\/devices\/[^/]+\/entitlement\/(?:claim|recover)(?:\/|$)/u.test(pathname);
 }
 
-async function betaReleaseReadiness(db: Database, config: Config): Promise<"full" | "pilot" | null> {
-  const [release] = await db.select().from(releases).where(and(eq(releases.channel, "stable"), eq(releases.active, true))).orderBy(desc(releases.publishedAt)).limit(1);
-  if (!release || !verifySignedDocument(release.signedManifest, release.signature, config.releasePublicKeyPem)) return null;
-  const manifest = releaseManifestSchema.safeParse({ ...(release.signedManifest as object), signature: release.signature });
-  if (!manifest.success || !betaManifestEvidenceReady(manifest.data)) return null;
-  if (manifest.data.betaEvidence?.stockPsg1Validation.status === "passed") return "full";
-  if (config.betaHardwarePilotEnabled && manifest.data.betaEvidence?.stockPsg1Validation.status === "pilot_pending") return "pilot";
+/** A redacted report is still optional personal telemetry; never persist it without an explicit opt-in. */
+export function compatibilityReportConsentGranted(input: { consentToNotify: boolean }): boolean {
+  return input.consentToNotify === true;
+}
+
+async function betaReleaseReadiness(db: Database, config: Config, profileId?: string): Promise<"full" | "pilot" | null> {
+  const release = await activeSignedStableRelease(db, config, profileId);
+  if (!release || !betaManifestEvidenceReady(release.manifest)) return null;
+  if (release.manifest.betaEvidence?.stockPsg1Validation.status === "passed") return "full";
+  if (config.betaHardwarePilotEnabled && release.manifest.betaEvidence?.stockPsg1Validation.status === "pilot_pending") return "pilot";
   return null;
 }
 
-function betaManifestEvidenceReady(manifest: { betaEvidence?: { artifactSha256: Record<string, string> } | undefined; artifacts: Array<{ id: string; sha256: string; delivery: string; component: string }> }): boolean {
+type ActiveSignedStableRelease = {
+  release: typeof releases.$inferSelect;
+  manifest: ReleaseManifest;
+};
+
+async function activeSignedStableRelease(db: Database, config: Config, profileId?: string): Promise<ActiveSignedStableRelease | null> {
+  const matches = await signedStableReleaseCandidates(db, config, "new_start");
+  // Publishing tools deactivate the prior release for an overlapping profile.
+  // If the database nevertheless has two signed active candidates, refusing
+  // both is safer than silently selecting a potentially wrong flash plan.
+  return selectUniqueReleaseForProfile(matches, profileId);
+}
+
+async function signedStableReleaseCandidates(
+  db: Database,
+  config: Config,
+  availability: "new_start" | "resume"
+): Promise<ActiveSignedStableRelease[]> {
+  const candidates = await db.select().from(releases).where(and(
+    eq(releases.channel, "stable"),
+    availability === "new_start" ? eq(releases.active, true) : eq(releases.resumeAvailable, true)
+  )).orderBy(desc(releases.publishedAt));
+  const matches: ActiveSignedStableRelease[] = [];
+  for (const release of candidates) {
+    if (!release.signedManifest || typeof release.signedManifest !== "object" || Array.isArray(release.signedManifest)) continue;
+    if (!verifySignedDocument(release.signedManifest, release.signature, config.releasePublicKeyPem)) continue;
+    const manifest = releaseManifestSchema.safeParse({ ...release.signedManifest, signature: release.signature });
+    if (!manifest.success || manifest.data.releaseId !== release.id) continue;
+    matches.push({ release, manifest: manifest.data });
+  }
+  return matches;
+}
+
+export function selectUniqueReleaseForProfile<T extends { manifest: Pick<ReleaseManifest, "profileIds"> }>(
+  candidates: T[],
+  profileId?: string
+): T | null {
+  const matching = profileId ? candidates.filter((candidate) => candidate.manifest.profileIds.includes(profileId)) : candidates;
+  return matching.length === 1 ? matching[0]! : null;
+}
+
+type InstallationBinding = {
+  profileId: string;
+  releaseId: string;
+  releaseVersion: string;
+  manifestSha256: string;
+  artifactHashes: Record<string, string>;
+};
+
+type InstallationBindingInput = Pick<InstallationBinding, "profileId" | "releaseVersion" | "artifactHashes">;
+type InstallationStartBindingInput = InstallationBindingInput & Pick<InstallationBinding, "releaseId" | "manifestSha256">;
+
+function hasInstallationBinding(license: typeof licenses.$inferSelect): license is typeof licenses.$inferSelect & {
+  installationProfileId: string;
+  installationProfileDocument: Record<string, unknown>;
+  installationProfileSignature: string;
+  installationReleaseId: string;
+  installationReleaseVersion: string;
+  installationManifestSha256: string;
+  installationArtifactHashes: Record<string, string>;
+} {
+  return Boolean(license.installationProfileId)
+    && Boolean(license.installationProfileDocument)
+    && typeof license.installationProfileDocument === "object"
+    && !Array.isArray(license.installationProfileDocument)
+    && typeof license.installationProfileSignature === "string"
+    && license.installationProfileSignature.length >= 64
+    && typeof license.installationReleaseId === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(license.installationReleaseId)
+    && Boolean(license.installationReleaseVersion)
+    && typeof license.installationManifestSha256 === "string"
+    && /^[a-f0-9]{64}$/u.test(license.installationManifestSha256)
+    && isArtifactHashMap(license.installationArtifactHashes);
+}
+
+function installationBindingOf(license: typeof licenses.$inferSelect): InstallationBinding {
+  if (!hasInstallationBinding(license)) throw new Error("Installation release binding is missing.");
+  return {
+    profileId: license.installationProfileId,
+    releaseId: license.installationReleaseId,
+    releaseVersion: license.installationReleaseVersion,
+    manifestSha256: license.installationManifestSha256,
+    artifactHashes: license.installationArtifactHashes
+  };
+}
+
+function isArtifactHashMap(value: unknown): value is Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length > 0 && entries.every(([id, hash]) => /^[a-z0-9][a-z0-9_-]{0,99}$/u.test(id) && typeof hash === "string" && /^[a-f0-9]{64}$/u.test(hash));
+}
+
+function artifactHashMapsMatch(left: Record<string, string>, right: Record<string, string>): boolean {
+  const leftEntries = Object.entries(left);
+  const rightEntries = Object.entries(right);
+  return leftEntries.length === rightEntries.length && leftEntries.every(([id, hash]) => right[id] === hash);
+}
+
+function signedInstallerArtifactHashes(manifest: ReleaseManifest): Record<string, string> | null {
+  const required = ["android_system", "verified_boot", "diagnostics", "diagnostics_test", "aurora_store", "retroarch"] as const;
+  const selected = required.map((component) => manifest.artifacts.find((artifact) => artifact.delivery === "private" && artifact.component === component));
+  if (selected.some((artifact) => !artifact)) return null;
+  return Object.fromEntries(selected.map((artifact) => [artifact!.id, artifact!.sha256]));
+}
+
+function manifestArtifactBindingMatches(manifest: ReleaseManifest, input: InstallationBindingInput): boolean {
+  const expected = signedInstallerArtifactHashes(manifest);
+  return Boolean(expected)
+    && manifest.profileIds.includes(input.profileId)
+    && manifest.version === input.releaseVersion
+    && artifactHashMapsMatch(expected!, input.artifactHashes);
+}
+
+function releaseBindingMatchesStart(release: ActiveSignedStableRelease, input: InstallationStartBindingInput): boolean {
+  return release.release.id === input.releaseId
+    && canonicalSignedManifestSha256(release) === input.manifestSha256
+    && manifestArtifactBindingMatches(release.manifest, input);
+}
+
+function installationBindingMatchesInput(binding: InstallationBinding, input: InstallationBindingInput): boolean {
+  return binding.profileId === input.profileId
+    && binding.releaseVersion === input.releaseVersion
+    && artifactHashMapsMatch(binding.artifactHashes, input.artifactHashes);
+}
+
+function installationBindingMatchesStartInput(binding: InstallationBinding, input: InstallationStartBindingInput): boolean {
+  return binding.releaseId === input.releaseId
+    && binding.manifestSha256 === input.manifestSha256
+    && installationBindingMatchesInput(binding, input);
+}
+
+function newInstallationResumeCredential(): string {
+  return `rpi_${randomNonce(32)}`;
+}
+
+async function rotateInstallationResumeCredential(db: Database, licenseId: string): Promise<{ credential: string; expiresAt: Date }> {
+  const credential = newInstallationResumeCredential();
+  const expiresAt = new Date(Date.now() + INSTALLATION_RESUME_CREDENTIAL_TTL_SECONDS * 1000);
+  await db.update(licenses).set({
+    installationResumeCredentialDigest: sha256(credential),
+    installationResumeCredentialExpiresAt: expiresAt
+  }).where(and(eq(licenses.id, licenseId), eq(licenses.status, "active")));
+  return { credential, expiresAt };
+}
+
+async function activeSignedReleaseForInstallationBinding(
+  db: Database,
+  config: Config,
+  binding: InstallationBinding
+): Promise<ActiveSignedStableRelease | null> {
+  const matches = (await signedStableReleaseCandidates(db, config, "resume"))
+    .filter((release) => release.release.id === binding.releaseId
+      && canonicalSignedManifestSha256(release) === binding.manifestSha256
+      && manifestArtifactBindingMatches(release.manifest, binding));
+  return matches.length === 1 ? matches[0]! : null;
+}
+
+/**
+ * Bind a started installation to the canonical signed release document, not
+ * merely a human version string. This blocks a same-version manifest rewrite
+ * from changing a flash plan during an emergency resume.
+ */
+export function canonicalSignedManifestSha256(release: ActiveSignedStableRelease): string | null {
+  return canonicalSignedDocumentSha256(release.release.signedManifest);
+}
+
+/** The boundary digest is over the unsigned document exactly as its offline signature was made. */
+export function canonicalSignedDocumentSha256(document: unknown): string | null {
+  const canonical = canonicalize(document);
+  return canonical ? sha256(canonical) : null;
+}
+
+async function publicReleaseReadyForProfile(db: Database, config: Config, profileId: string, installerVersion?: string): Promise<boolean> {
+  const release = await activeSignedStableRelease(db, config, profileId);
+  return Boolean(release
+    && publicManifestEvidenceReady(release.manifest)
+    && (!installerVersion || installerVersionSatisfies(installerVersion, release.manifest.minimumInstallerVersion)));
+}
+
+export function betaManifestEvidenceReady(manifest: ReleaseManifest): boolean {
   const required = ["android_system", "verified_boot", "diagnostics", "diagnostics_test", "aurora_store", "retroarch"];
   if (!manifest.betaEvidence) return false;
   const privateArtifacts = manifest.artifacts.filter((artifact) => artifact.delivery === "private");
   return required.every((component) => privateArtifacts.some((artifact) => artifact.component === component))
     && privateArtifacts.every((artifact) => manifest.betaEvidence?.artifactSha256[artifact.id] === artifact.sha256);
+}
+
+export function publicManifestEvidenceReady(manifest: ReleaseManifest): boolean {
+  const required = ["android_system", "verified_boot", "diagnostics", "diagnostics_test", "aurora_store", "retroarch"];
+  if (!manifest.publicEvidence) return false;
+  const privateArtifacts = manifest.artifacts.filter((artifact) => artifact.delivery === "private");
+  return required.every((component) => privateArtifacts.some((artifact) => artifact.component === component))
+    && manifest.artifacts.every((artifact) => manifest.publicEvidence?.artifactSha256[artifact.id] === artifact.sha256);
+}
+
+function evidenceReadyForResume(manifest: ReleaseManifest): boolean {
+  return publicManifestEvidenceReady(manifest) || betaManifestEvidenceReady(manifest);
+}
+
+type InstallationCheckpointDefinition = {
+  operation: InstallationJournalEntry["operation"];
+  before: InstallationJournalEntry["stage"];
+  after: InstallationJournalEntry["stage"];
+  idempotent: boolean;
+  /** A reconnect in the exact target mode can prove an interrupted reboot. */
+  verifiableAfterReconnect?: boolean;
+};
+
+// This is deliberately a server-side fixed state machine, not a sequence the
+// browser can supply in a release manifest. Each command has an exact signed
+// checkpoint and only the system image's independently idempotent sparse
+// `flash:system` transfers may repeat with a segment index.
+const INSTALLATION_CHECKPOINTS: readonly InstallationCheckpointDefinition[] = [
+  { operation: "begin", before: "start", after: "awaiting_bootloader_unlock", idempotent: true, verifiableAfterReconnect: true },
+  { operation: "unlock", before: "awaiting_bootloader_unlock", after: "awaiting_unlocked_android", idempotent: false },
+  { operation: "reboot_for_vbmeta", before: "awaiting_unlocked_android", after: "awaiting_vbmeta_bootloader", idempotent: true, verifiableAfterReconnect: true },
+  { operation: "flash_vbmeta", before: "awaiting_vbmeta_bootloader", after: "awaiting_vbmeta_bootloader", idempotent: true },
+  { operation: "reboot_after_vbmeta", before: "awaiting_vbmeta_bootloader", after: "awaiting_system_android", idempotent: true, verifiableAfterReconnect: true },
+  { operation: "reboot_for_fastbootd", before: "awaiting_system_android", after: "awaiting_fastbootd_system", idempotent: true, verifiableAfterReconnect: true },
+  { operation: "resize_system", before: "awaiting_fastbootd_system", after: "awaiting_fastbootd_system", idempotent: true },
+  { operation: "flash_system", before: "awaiting_fastbootd_system", after: "awaiting_fastbootd_system", idempotent: true },
+  { operation: "wipe_userdata", before: "awaiting_fastbootd_system", after: "awaiting_fastbootd_system", idempotent: true },
+  { operation: "reboot_after_system", before: "awaiting_fastbootd_system", after: "awaiting_postflash_android", idempotent: true, verifiableAfterReconnect: true },
+  { operation: "install_diagnostics", before: "awaiting_postflash_android", after: "awaiting_postflash_android", idempotent: true },
+  { operation: "install_diagnostics_test", before: "awaiting_postflash_android", after: "awaiting_postflash_android", idempotent: true },
+  { operation: "install_aurora_store", before: "awaiting_postflash_android", after: "awaiting_postflash_android", idempotent: true },
+  { operation: "install_retroarch", before: "awaiting_postflash_android", after: "awaiting_postflash_android", idempotent: true },
+  { operation: "reboot_after_apps", before: "awaiting_postflash_android", after: "awaiting_first_cold_boot", idempotent: true, verifiableAfterReconnect: true },
+  { operation: "first_cold_boot", before: "awaiting_first_cold_boot", after: "awaiting_second_cold_boot", idempotent: true, verifiableAfterReconnect: true },
+  { operation: "diagnostics", before: "awaiting_second_cold_boot", after: "complete", idempotent: true }
+];
+
+type JournalHistoryEntry = {
+  stage: string;
+  operation: string;
+  operationState: string;
+  operationIndex: number;
+  operationCount: number;
+};
+
+export function validateInstallationJournalTransition(
+  previous: JournalHistoryEntry | null,
+  next: InstallationJournalEntry
+): string | null {
+  const checkpointIndex = INSTALLATION_CHECKPOINTS.findIndex((checkpoint) => checkpoint.operation === next.operation);
+  const checkpoint = INSTALLATION_CHECKPOINTS[checkpointIndex];
+  if (!checkpoint) return "The installation operation is not part of the signed PSG1 checkpoint plan.";
+  if (next.operation !== "flash_system" && (next.operationIndex !== 0 || next.operationCount !== 1)) {
+    return "Only signed sparse system transfers may use a multi-segment checkpoint.";
+  }
+  if (next.operationState === "intent" && next.stage !== checkpoint.before) {
+    return "An installation intent must be recorded at its exact pre-command checkpoint.";
+  }
+  if ((next.operationState === "sent" || next.operationState === "verified") && next.stage !== checkpoint.after) {
+    return "A sent or verified installation command must use its exact post-command checkpoint.";
+  }
+  if (next.operationState === "unknown" && next.stage !== checkpoint.before && next.stage !== checkpoint.after) {
+    return "An uncertain installation command must use one of its signed checkpoints.";
+  }
+  if (!previous) {
+    return next.operation === "begin" && next.operationState === "intent" && next.operationIndex === 0 && next.operationCount === 1
+      ? null
+      : "The journal must begin with the signed installation intent.";
+  }
+
+  const previousIndex = INSTALLATION_CHECKPOINTS.findIndex((candidate) => candidate.operation === previous.operation);
+  const previousCheckpoint = INSTALLATION_CHECKPOINTS[previousIndex];
+  if (!previousCheckpoint) return "The existing installation journal has an unknown checkpoint.";
+  const sameSegment = previous.operation === next.operation
+    && previous.operationIndex === next.operationIndex
+    && previous.operationCount === next.operationCount;
+  if (sameSegment) {
+    if (previous.operationState === "intent") {
+      if ((next.operationState === "intent" || next.operationState === "unknown") && next.stage === checkpoint.before) return null;
+      if (next.operationState === "sent" && next.stage === checkpoint.after) return null;
+    }
+    if (previous.operationState === "sent") {
+      if ((next.operationState === "verified" || next.operationState === "unknown") && next.stage === checkpoint.after) return null;
+      // A tab loss after `sent` can only retry an explicitly idempotent
+      // checkpoint. Unlock must instead be verified from Android state.
+      if (next.operationState === "intent" && checkpoint.idempotent && next.stage === checkpoint.before) return null;
+    }
+    if (previous.operationState === "unknown") {
+      if (next.operationState === "intent" && (checkpoint.idempotent || previous.stage === checkpoint.before) && next.stage === checkpoint.before) return null;
+      if (next.operationState === "verified" && checkpoint.operation === "unlock" && previous.stage === checkpoint.after) return null;
+      if (next.operationState === "verified" && checkpoint.verifiableAfterReconnect === true && previous.stage === checkpoint.after) return null;
+    }
+    if (previous.operationState === "verified" && next.operationState === "verified" && next.stage === checkpoint.after) return null;
+    return "The journal state must advance intent → sent → verified, or retry only an idempotent signed checkpoint.";
+  }
+
+  if (previous.operationState !== "verified") {
+    return "The previous installation checkpoint is unresolved and cannot advance to a new command.";
+  }
+  const nextOperation = previousCheckpoint.operation === "flash_system" && previous.operationIndex + 1 < previous.operationCount
+    ? "flash_system"
+    : INSTALLATION_CHECKPOINTS[previousIndex + 1]?.operation;
+  if (next.operation !== nextOperation || next.operationState !== "intent") {
+    return "The journal operation is out of order for the signed PSG1 checkpoint plan.";
+  }
+  if (next.operation === "flash_system") {
+    if (previousCheckpoint.operation === "flash_system") {
+      if (next.operationCount !== previous.operationCount || next.operationIndex !== previous.operationIndex + 1) {
+        return "Sparse system transfer checkpoints must continue in exact signed order.";
+      }
+    } else if (next.operationIndex !== 0) {
+      return "The first sparse system transfer checkpoint must start at segment zero.";
+    }
+  } else if (next.operationIndex !== 0 || next.operationCount !== 1) {
+    return "This signed checkpoint does not permit segment indexing.";
+  }
+  return null;
 }
 
 export function launchGateSetComplete(

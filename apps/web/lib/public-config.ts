@@ -26,14 +26,6 @@ export function solanaRpcUrl(): string {
   ) ?? "https://api.mainnet-beta.solana.com";
 }
 
-export const publicSalesState = process.env.NEXT_PUBLIC_SALES_STATE === "public"
-  ? "public"
-  : process.env.NEXT_PUBLIC_SALES_STATE === "beta"
-    ? "beta"
-    : "closed";
-
-export const compatibilityCheckerOnly = process.env.NEXT_PUBLIC_COMPATIBILITY_CHECKER_ONLY !== "false";
-
 export const legalConfig = {
   entity: process.env.NEXT_PUBLIC_LEGAL_ENTITY?.trim() || "biccsdev",
   supportUrl: validUrl(process.env.NEXT_PUBLIC_SUPPORT_URL) ?? "https://discord.gg/QWYxkJgEHH",

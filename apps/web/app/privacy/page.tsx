@@ -11,11 +11,11 @@ export default function Privacy() {
     <h2>Data used by Revive</h2>
     <ul><li>A one-way, domain-separated hash of the cross-checked PSG1 bootloader serial. The raw serial remains on the local computer.</li><li>Compatibility profile fields needed to decide support. Unknown-build and crash reports are redacted and submitted only through the stated product flow.</li><li>Security audit events, coarse request metadata, and rate-limit state needed to operate and protect the service.</li></ul>
     <h2>Data not used as the license key</h2>
-    <p>Revive does not bind beta access to an Android installation ID, wallet, hostname, computer ID, or Google account. It does not ask users to paste raw device serials, recovery credentials, or license tokens into this website.</p>
+    <p>Revive does not bind installation access to an Android installation ID, wallet, hostname, computer ID, or Google account. It does not ask users to paste raw device serials, recovery credentials, or license tokens into this website.</p>
     <h2>Processors and public-chain data</h2>
     <p>Hosting providers process service data on our behalf. Optional Solana donations are public blockchain records outside Revive&apos;s control and are not linked to installer access by the product. A final notice must name production processors, regions, transfer safeguards, and user-rights procedures.</p>
     <h2>Retention</h2>
-    <p>{legalConfig.retention ?? "[RETENTION PERIODS FOR BETA ENTITLEMENTS, REPORTS, LOGS, AND AUDIT EVENTS REQUIRED]"}</p>
+    <p>{legalConfig.retention ?? "[RETENTION PERIODS FOR INSTALLATION ENTITLEMENTS, REPORTS, LOGS, AND AUDIT EVENTS REQUIRED]"}</p>
     <h2>Your choices</h2>
     <p>Optional crash reporting can be disabled. The production notice must explain applicable access, correction, deletion, objection, and complaint rights, including information that cannot be deleted because it is required for security, accounting, or permanent device-license recovery.</p>
   </main>;

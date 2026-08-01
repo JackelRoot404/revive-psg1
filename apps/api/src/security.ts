@@ -33,7 +33,7 @@ export function verifyEd25519Base58(input: { publicKey: string; signature: strin
   }
 }
 
-type TokenAudience = "desktop-session" | "checkout" | "browser-checkout" | "wallet" | "web-installer";
+type TokenAudience = "desktop-session" | "checkout" | "browser-checkout" | "wallet" | "web-installer" | "web-installer-resume";
 
 export class TokenService {
   private readonly sessionSecret: Uint8Array;
@@ -60,6 +60,7 @@ export class TokenService {
     deviceId: string;
     wallet?: string;
     expiresIn?: string;
+    expiresAt?: Date;
   }): Promise<string> {
     return new SignJWT({ sessionId: input.sessionId, deviceId: input.deviceId, wallet: input.wallet })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
@@ -67,7 +68,7 @@ export class TokenService {
       .setAudience(input.audience)
       .setSubject(input.subject)
       .setIssuedAt()
-      .setExpirationTime(input.expiresIn ?? "15m")
+      .setExpirationTime(input.expiresAt ?? input.expiresIn ?? "15m")
       .sign(this.sessionSecret);
   }
 

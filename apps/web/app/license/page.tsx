@@ -1,33 +1,18 @@
 import Link from "next/link";
-import { isBetaBrowserInstallerEnabled, isCompatibilityCheckerOnly, isEarlyAccessFree } from "../../lib/server-config";
 
-export const metadata = { title: "License status" };
+export const metadata = { title: "Free PSG1 installation" };
 
 export default function LicenseStatus() {
-  const earlyAccessFree = isEarlyAccessFree();
-  const compatibilityCheckerOnly = isCompatibilityCheckerOnly();
-  const beta = isBetaBrowserInstallerEnabled() && !compatibilityCheckerOnly;
   return <main className="prose">
-    <span className="section-label">{compatibilityCheckerOnly ? "COMPATIBILITY CHECKER" : beta ? "DISCORD BROWSER BETA" : earlyAccessFree ? "FREE FOREVER" : "DEVICE-BOUND ACCESS"}</span>
-    <h1>{compatibilityCheckerOnly ? "Check compatibility first." : beta ? "Discord-supervised beta." : earlyAccessFree ? "Free forever." : "Device-bound access."}</h1>
-    {compatibilityCheckerOnly ? <>
-      <p>The public website currently offers a read-only compatibility scan only. Browser unlock, activation, and flashing are not open yet.</p>
-      <div className="notice"><strong>No purchase, wallet, or activation required.</strong><p>Connect a PSG1, complete the read-only scan, and see whether your firmware matches the signed profile. Nothing is bound, unlocked, wiped, or flashed.</p></div>
-      <p><Link className="button primary inline-button" href="/wizard">Check compatibility</Link></p>
-    </> : beta ? <>
-      <p>Revive PSG1 beta access is free and invitation-only. A Discord-issued one-time code permanently binds to the first compatible PSG1 that redeems it.</p>
-      <div className="notice"><strong>No wallet or recovery credential.</strong><p>Reconnect the same PSG1 and complete a new scan to resume a browser installation after a reload or USB interruption. No echOS restoration image is provided.</p></div>
-      <p><Link className="button primary inline-button" href="/wizard">Open beta wizard</Link></p>
-    </> : earlyAccessFree ? <>
-      <p>Revive PSG1 is free forever. Donations are optional and greatly appreciated—they help fund new features, bug fixes, and long-term maintenance.</p>
-      <div className="notice"><strong>No purchase or wallet required.</strong><p>Connect a supported PSG1, complete the read-only compatibility scan, and activate device-bound access instantly.</p></div>
-      <p><Link className="button primary inline-button" href="/wizard">Start Unlocking — Free Forever</Link></p>
-    </> : <p>Revive licenses the physical PSG1, not the wallet or computer. Reconnect the licensed handheld and run the free web scan. A factory reset, OS reinstall, or different computer does not consume another license.</p>}
-    <div className="notice"><strong>Access follows the PSG1.</strong><p>Factory resets, Android reinstalls, changing wallets, and moving to another computer do not consume another device activation.</p></div>
-    <h2>Why the PSG1 must be connected</h2>
-    <p>The website does not accept typed device serials, recovery credentials, license tokens, or manually entered transaction signatures. The web wizard derives the hashed device ID only after it cross-checks the physical PSG1 in ADB, USB, and Fastboot. A device hash alone cannot issue installer access.</p>
-    <h2>If the browser connection fails</h2>
-    <ol><li>Use a data-capable USB cable and power on the PSG1.</li><li>Accept the ADB prompt if Android displays one.</li><li>Run the read-only scan again and save the redacted support report.</li></ol>
+    <span className="section-label">FREE FOREVER</span>
+    <h1>Free, device-bound installation.</h1>
+    <p>Revive does not require a wallet, payment, promo code, or Discord approval. Connect a stock PSG1 and complete the read-only scan; the secure service decides whether its signed release is available for that exact handheld.</p>
+    <div className="notice"><strong>Nothing happens until you explicitly confirm.</strong><p>A passing scan alone never unlocks, wipes, or flashes the device. Before any destructive step, the wizard explains the risks and requires you to type <b>ERASE PSG1</b>.</p></div>
+    <h2>Access follows the PSG1</h2>
+    <p>The entitlement is bound to the verified physical device, not a browser profile, computer, wallet, or Discord account. Reconnect the same PSG1 and complete a new scan to resume an interrupted installation.</p>
+    <h2>Important limits</h2>
+    <ul><li>Only stock, locked PSG1s are included in the public conversion path.</li><li>Previously unlocked or modified devices are left untouched by this release.</li><li>The conversion wipes data, leaves the bootloader unlocked, and may be irreversible.</li><li>No echOS restoration image is provided.</li></ul>
+    <p><Link className="button primary inline-button" href="/wizard">Check PSG1 and continue</Link></p>
     <p><Link className="text-link" href="/docs">Read the installation guide →</Link></p>
   </main>;
 }

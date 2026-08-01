@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CompatibilityProfile, CompatibilitySnapshot, WebCompatibilitySnapshot } from "@revive-psg1/contracts";
-import { profileMatches, webPreflightMatches, webProfileMatches } from "./profiles";
+import { profileMatches, selectHighestPriorityProfile, webPreflightBlockers, webPreflightMatches, webProfileMatches } from "./profiles";
 
 const profile: CompatibilityProfile = {
   id: "psg1-rk3588s-v11-api35-v1",
   version: 1,
+  priority: 100,
   product: "PSG1",
   modelPatterns: ["^PSG1$"],
   boardPatterns: ["RK3588S.*V11"],
@@ -39,8 +40,42 @@ const snapshot: CompatibilitySnapshot = {
 
 describe("fail-closed compatibility matching", () => {
   it("matches the Android API and incremental build explicitly", () => expect(profileMatches(profile, snapshot)).toBe(true));
+  it("matches a stock 1.1.23 vector through the universal profile rather than a firmware allowlist", () => {
+    const universal: CompatibilityProfile = {
+      ...profile,
+      id: "universal-stock-psg1-v1",
+      priority: 10,
+      boardPatterns: ["PSG1"],
+      firmwarePatterns: ["^PlaySolana/PSG1/PSG1:"]
+    };
+    const stock1123 = {
+      ...snapshot,
+      buildFingerprint: "PlaySolana/PSG1/PSG1:15/1.1.23/user/release-keys",
+      buildIncremental: "1.1.23"
+    };
+    expect(profileMatches(universal, stock1123)).toBe(true);
+  });
   it("rejects an Android release number accidentally supplied as API level", () => expect(profileMatches(profile, { ...snapshot, androidApiLevel: 15 })).toBe(false));
   it("rejects an unknown incremental build even when the model matches", () => expect(profileMatches(profile, { ...snapshot, buildIncremental: "unknown", buildFingerprint: "unknown" })).toBe(false));
+});
+
+describe("signed profile priority", () => {
+  it("selects the unique highest-priority match independently of row order", () => {
+    const lower = { ...profile, id: "lower", priority: 10 };
+    const higher = { ...profile, id: "higher", priority: 20 };
+    const selected = selectHighestPriorityProfile([lower, higher]);
+    expect(selected.status).toBe("matched");
+    if (selected.status === "matched") expect(selected.profile.id).toBe("higher");
+  });
+
+  it("rejects a highest-priority tie instead of choosing a database row order", () => {
+    const selected = selectHighestPriorityProfile([
+      { ...profile, id: "z-profile", priority: 20 },
+      { ...profile, id: "a-profile", priority: 20 },
+      { ...profile, id: "lower", priority: 10 }
+    ]);
+    expect(selected).toEqual({ status: "ambiguous", priority: 20, profileIds: ["a-profile", "z-profile"] });
+  });
 });
 
 describe("web destructive preflight", () => {
@@ -68,6 +103,12 @@ describe("web destructive preflight", () => {
   it("rejects a super partition outside the signed profile", () => expect(webPreflightMatches(profile, { ...webSnapshot, superPartitionBytes: 49_000_000_000 })).toBe(false));
   it("rejects low battery unless the device is charging", () => expect(webPreflightMatches(profile, { ...webSnapshot, batteryPercent: 20, charging: false })).toBe(false));
   it("rejects inadequate browser storage", () => expect(webPreflightMatches(profile, { ...webSnapshot, hostBytesAvailable: 1_000_000_000 })).toBe(false));
+  it("treats an absent USB descriptor serial as advisory when immutable identity is verified", () => {
+    expect(webPreflightMatches(profile, { ...webSnapshot, fastbootUsbDescriptorVerified: false })).toBe(true);
+  });
+  it("returns structured preflight blockers without collapsing compatibility state", () => {
+    expect(webPreflightBlockers(profile, { ...webSnapshot, batteryPercent: 20, charging: false })).toContain("BATTERY_OR_CHARGING_REQUIRED");
+  });
 
   it("matches stock firmware from the actual system identity", () => expect(webProfileMatches(profile, webSnapshot)).toBe(true));
   it("does not mistake a Lineage system for stock when merged props retain PlaySolana", () => expect(webProfileMatches(profile, {

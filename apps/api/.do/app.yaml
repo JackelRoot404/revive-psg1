@@ -36,9 +36,11 @@ services:
         value: "8080"
       - key: PUBLIC_SALES_ENABLED
         value: "false"
-      - key: COMPATIBILITY_CHECKER_ONLY
-        value: "true"
-      - key: EARLY_ACCESS_FREE
+      # The API owns availability. Start read-only and switch to `public` only
+      # after signed profile/release/driver evidence has been published.
+      - key: INSTALLER_MODE
+        value: "scan_only"
+      - key: INSTALLER_NEW_STARTS_ENABLED
         value: "true"
       - key: TREASURY_WALLET
         value: EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y

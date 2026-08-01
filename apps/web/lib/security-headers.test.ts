@@ -1,13 +1,12 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import nextConfig from "../next.config";
 
 describe("web security headers", () => {
-  it("allows same-origin WebUSB instead of disabling the wizard", async () => {
-    const routes = await nextConfig.headers?.();
-    const global = routes?.find((route) => route.source === "/:path*");
-    const policy = global?.headers.find((header) => header.key === "Permissions-Policy")?.value;
+  it("allows same-origin WebUSB in the static host policy", () => {
+    const netlifyConfig = readFileSync(resolve(process.cwd(), "../..", "netlify.toml"), "utf8");
 
-    expect(policy).toContain("usb=(self)");
-    expect(policy).not.toContain("usb=()");
+    expect(netlifyConfig).toContain('Permissions-Policy = "camera=(), microphone=(), geolocation=(), usb=(self)"');
+    expect(netlifyConfig).not.toContain("usb=()");
   });
 });

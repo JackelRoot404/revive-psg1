@@ -11,18 +11,14 @@ if (!inputPath || !process.env.DATABASE_URL) {
 const envelope = JSON.parse(readFileSync(inputPath, "utf8"));
 const document = envelope.document;
 const signature = envelope.signature;
-if (!document?.id || typeof document.version !== "number" || !signature) {
-  throw new Error("Signed envelope must contain document.id, document.version, and signature");
+if (!document?.id || typeof document.version !== "number" || !Number.isInteger(document.priority)
+  || document.priority < 0 || document.priority > 1_000_000 || !signature) {
+  throw new Error("Signed envelope must contain document.id, document.version, document.priority, and signature");
 }
 
 const sql = postgres(process.env.DATABASE_URL, { max: 1 });
 try {
   await sql.begin(async (tx) => {
-    await tx`
-      update compatibility_profiles
-      set active = false
-      where id <> ${document.id}
-    `;
     await tx`
       insert into compatibility_profiles (id, version, signed_document, signature, active)
       values (
@@ -39,7 +35,7 @@ try {
         active = true
     `;
   });
-  console.log(`Upserted active compatibility profile ${document.id} v${document.version}`);
+  console.log(`Upserted active compatibility profile ${document.id} v${document.version} (priority ${document.priority})`);
 } finally {
   await sql.end({ timeout: 5 });
 }

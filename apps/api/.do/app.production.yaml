@@ -1,4 +1,4 @@
-# Public-launch template. Keep apps/api/.do/app.yaml at one instance for beta.
+# Public-launch template. Start scan-only until signed release materials are ready.
 # Replace every REPLACE_* value and provision secrets in App Platform before use.
 name: revive-psg1-api
 region: nyc
@@ -41,9 +41,11 @@ services:
     envs:
       - { key: NODE_ENV, value: production }
       - { key: PORT, value: "8080" }
-      # This switch is necessary but the API must also verify every database launch gate.
+      # Commerce is retired; installation is free and server-authorized.
       - { key: PUBLIC_SALES_ENABLED, value: "false" }
       - { key: EARLY_ACCESS_FREE, value: "true" }
+      - { key: INSTALLER_MODE, value: "scan_only" }
+      - { key: INSTALLER_NEW_STARTS_ENABLED, value: "true" }
       - { key: TREASURY_WALLET, value: EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y }
       - { key: PUBLIC_WEB_URL, value: "https://revivepsg.com" }
       - { key: PUBLIC_API_URL, value: "https://api.revivepsg.com" }

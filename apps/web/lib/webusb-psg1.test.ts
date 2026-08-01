@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyInstallationState, deviceIdForSerial, isExpectedUsbDisconnect, normalizeSerial, parseCpuInfoSerial, parseDfKilobytes, parseFastbootResponse, parseFastbootSize, parseFastbootUnlocked, parseFastbootVariable } from "./webusb-psg1";
+import { classifyInstallationState, deviceIdForSerial, finalizeWebScan, isExpectedUsbDisconnect, normalizeSerial, parseCpuInfoSerial, parseDfKilobytes, parseFastbootResponse, parseFastbootSize, parseFastbootUnlocked, parseFastbootVariable, WebFastbootPsg1, type AdbCompatibilityScan } from "./webusb-psg1";
 
 describe("PSG1 WebUSB transport primitives", () => {
   it("normalizes and hashes the same manufacturer serial deterministically", async () => {
@@ -72,6 +72,47 @@ describe("PSG1 WebUSB transport primitives", () => {
       lineageVersion: "22.2-UNOFFICIAL",
       bootloaderUnlocked: true
     })).toBe("already_modified");
+  });
+
+  it("uses the Fastboot protocol serial when a browser descriptor serial is stale", async () => {
+    const transport = {
+      normalizedUsbSerial: "STALE_BROWSER_DESCRIPTOR",
+      getVariable: async () => "PSG1-TEST-0001"
+    };
+    await expect(WebFastbootPsg1.prototype.assertIdentity.call(transport, "psg1_test_0001")).resolves.toBeUndefined();
+  });
+
+  it("never substitutes a browser USB descriptor for the Fastboot protocol serial", async () => {
+    const transport = {
+      normalizedUsbSerial: "PSG1-TEST-0001",
+      getVariable: async () => ""
+    };
+    await expect(WebFastbootPsg1.prototype.assertIdentity.call(transport, "psg1_test_0001"))
+      .rejects.toThrow(/protocol serial number/u);
+  });
+
+  it("requires bootloader Fastboot and a matching CPU-to-protocol serial for a completed scan", async () => {
+    const adb: AdbCompatibilityScan = {
+      product: "PSG1", model: "PSG1", board: "RK3588S PSG1", hardware: "rk3588",
+      buildFingerprint: "PlaySolana/PSG1/PSG1:15/build:user/release-keys", buildIncremental: "1.1.23",
+      systemBuildFingerprint: "PlaySolana/PSG1/PSG1:15/build:user/release-keys",
+      vendorBuildFingerprint: "PlaySolana/PSG1/PSG1:15/build:user/release-keys", systemBuildIncremental: "1.1.23",
+      systemBuildType: "user", lineageVersion: "", bootloaderUnlocked: false, installationState: "stock_locked",
+      androidApiLevel: 35, vendorApiLevel: 35, batteryPercent: 80, charging: true, usbStable: true,
+      recoveryCapable: true, hostBytesAvailable: 8_000_000_000, systemPartitionBytes: 4_000_000_000,
+      bootloaderSerialCandidate: "PSG1CPU0001"
+    };
+    const selectedModes: string[] = [];
+    const fastboot = {
+      normalizedUsbSerial: "STALE_DESCRIPTOR",
+      assertMode: async (mode: string) => { selectedModes.push(mode); },
+      getVariable: async (name: string) => name === "serialno" ? "PSG1-CPU-0001" : "54975528960"
+    };
+    const completed = await finalizeWebScan(adb, fastboot as never);
+    expect(selectedModes).toEqual(["bootloader"]);
+    expect(completed.bootloaderSerial).toBe("PSG1CPU0001");
+    expect(completed.fastbootUsbDescriptorVerified).toBe(false);
+    expect(completed.serialVerified).toBe(true);
   });
 
   it("recognizes only expected USB teardown errors after an intentional reboot", () => {

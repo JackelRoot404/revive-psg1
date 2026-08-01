@@ -78,6 +78,55 @@
       "when": 1785291000000,
       "tag": "0010_hardware_pilot_invite",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785427200000,
+      "tag": "0011_public_installer_journal",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785513600000,
+      "tag": "0012_installation_journal_segments",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785600000000,
+      "tag": "0013_retain_started_release",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785686400000,
+      "tag": "0014_bind_release_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785772800000,
+      "tag": "0015_serialize_installation_journal",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785859200000,
+      "tag": "0016_freeze_installation_profile",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785945600000,
+      "tag": "0017_durable_fastboot_resume",
+      "breakpoints": true
     }
   ]
 }

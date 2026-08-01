@@ -44,6 +44,11 @@ export type AdbCompatibilityScan = Omit<WebCompatibilityScan,
   "deviceId" | "bootloaderSerial" | "superPartitionBytes" | "serialVerified" | "immutableSerialVerified" | "fastbootUsbDescriptorVerified"
 > & { bootloaderSerialCandidate: string };
 
+export type SparseFlashHooks = {
+  beforeSegment?: (index: number, count: number) => Promise<void>;
+  afterSegment?: (index: number, count: number) => Promise<void>;
+};
+
 export class WebAdbPsg1 {
   readonly adb: Adb;
   readonly normalizedSerial: string;
@@ -64,8 +69,6 @@ export class WebAdbPsg1 {
     }
     const device = await manager.requestDevice({ filters: [{ vendorId: ROCKCHIP_VENDOR_ID }] });
     if (!device) throw new Error("No PSG1 ADB interface was selected.");
-    const usbSerial = normalizeSerial(device.raw.serialNumber ?? device.serial);
-    if (!usbSerial) throw new Error("The PSG1 USB descriptor did not expose a serial number.");
     const connection = await device.connect();
     const transport = await AdbDaemonTransport.authenticate({
       serial: device.serial,
@@ -77,11 +80,12 @@ export class WebAdbPsg1 {
     // exposes that event as a rejected promise, so attach a handler immediately
     // while command-level calls continue to report unexpected failures.
     void adb.disconnected.catch(() => undefined);
+    // A browser USB descriptor serial is intentionally not an identity gate:
+    // it can be omitted or cached across mode transitions. The authoritative
+    // proof comes later from Android's immutable CPU serial and Fastboot's
+    // protocol `serialno` response. Keep the ADB connection identifier only
+    // as a local connection-stability hint.
     const adbSerial = normalizeSerial(adb.serial);
-    if (!adbSerial || adbSerial !== usbSerial) {
-      await adb.close();
-      throw new Error("ADB and USB descriptor serials do not match.");
-    }
     return new WebAdbPsg1(adb, adbSerial);
   }
 
@@ -132,7 +136,7 @@ export class WebAdbPsg1 {
       bootloaderSerialCandidate,
       androidApiLevel: parseInteger(androidApi), vendorApiLevel: parseInteger(vendorApi),
       batteryPercent, charging: status === 2 || status === 5,
-      usbStable: serialAgain === this.normalizedSerial,
+      usbStable: !this.normalizedSerial || !serialAgain || serialAgain === this.normalizedSerial,
       recoveryCapable: recovery.trim() === "yes",
       hostBytesAvailable: Math.max(0, (storage.quota ?? 0) - (storage.usage ?? 0)),
       systemPartitionBytes: parseDfKilobytes(systemStorage)
@@ -156,7 +160,11 @@ export class WebAdbPsg1 {
   }
 
   /** Upload, install, and inspect one release APK through a fixed ADB path. */
-  async installVerifiedApk(apk: Blob, expected: { packageName: string; versionName?: string; signerSha256: string }): Promise<void> {
+  async installVerifiedApk(
+    apk: Blob,
+    expected: { packageName: string; versionName?: string; signerSha256: string },
+    beforeInstall?: () => Promise<void>
+  ): Promise<void> {
     if (!/^[a-z][a-z0-9_.]{2,150}$/u.test(expected.packageName)
       || (expected.versionName !== undefined && !expected.versionName.trim())
       || !/^[a-f0-9]{64}$/u.test(expected.signerSha256)) {
@@ -167,6 +175,10 @@ export class WebAdbPsg1 {
     try {
       const apkStream = apk.stream() as unknown as ConstructorParameters<typeof Consumable.WrapByteReadableStream>[0];
       await sync.write({ filename: remotePath, file: new Consumable.WrapByteReadableStream(apkStream, 64 * 1024), permission: 0o644 });
+      // Uploading to /data/local/tmp is recoverable staging. The journal must
+      // mark the APK operation as sent only immediately before `pm install`,
+      // which is the first command that changes the installed system state.
+      await beforeInstall?.();
       const result = await this.adb.subprocess.noneProtocol.spawnWaitText(["pm", "install", "-r", "--user", "0", remotePath]);
       if (!/^Success\b/mu.test(result)) throw new Error(`Android did not install ${expected.packageName}.`);
       const details = await this.adb.subprocess.noneProtocol.spawnWaitText(["dumpsys", "package", expected.packageName]);
@@ -182,10 +194,14 @@ export class WebAdbPsg1 {
     }
   }
 
-  async runDiagnostics(): Promise<void> {
-    const output = await this.adb.subprocess.noneProtocol.spawnWaitText([
-      "am", "instrument", "-w", "com.revivepsg1.diagnostics.test/androidx.test.runner.AndroidJUnitRunner"
-    ]);
+  async runDiagnostics(command: readonly string[] = [
+    "am", "instrument", "-w", "com.revivepsg1.diagnostics.test/androidx.test.runner.AndroidJUnitRunner"
+  ]): Promise<void> {
+    const expected = ["am", "instrument", "-w", "com.revivepsg1.diagnostics.test/androidx.test.runner.AndroidJUnitRunner"];
+    if (command.length !== expected.length || command.some((part, index) => part !== expected[index])) {
+      throw new Error("The signed release requested an unsupported diagnostics command.");
+    }
+    const output = await this.adb.subprocess.noneProtocol.spawnWaitText([...command]);
     if (!/(?:OK \(|REVIVE_DIAGNOSTICS_PASS)/u.test(output)) {
       throw new Error("The PSG1 diagnostics did not report a pass.");
     }
@@ -262,6 +278,12 @@ export class WebFastbootPsg1 {
     return parseFastbootSize(await this.getVariable("max-download-size"));
   }
 
+  async partitionSize(partition: "super" | "system"): Promise<number> {
+    const size = parseFastbootSize(await this.getVariable(`partition-size:${partition}`));
+    if (!size) throw new Error(`Fastboot did not report a valid ${partition} partition size.`);
+    return size;
+  }
+
   async assertMode(expected: "bootloader" | "fastbootd"): Promise<void> {
     const userspace = (await this.getVariable("is-userspace")).trim().toLowerCase() === "yes";
     if (userspace !== (expected === "fastbootd")) {
@@ -271,9 +293,16 @@ export class WebFastbootPsg1 {
 
   async assertIdentity(expectedSerial: string): Promise<void> {
     const expected = normalizeSerial(expectedSerial);
-    const fastboot = normalizeSerial((await this.getVariable("serialno")) || this.normalizedUsbSerial);
-    if (!expected || fastboot !== expected || this.normalizedUsbSerial !== expected) {
-      throw new Error("The selected Fastboot interface is not the PSG1 authorized for this beta installation.");
+    const fastboot = normalizeSerial(await this.getVariable("serialno"));
+    // Browser USB descriptor serials may be unavailable or stale across a
+    // reboot. The Fastboot protocol serial is the required cross-mode proof;
+    // a descriptor serial is useful telemetry only and must not make a scan
+    // pass yet make the same device impossible to install.
+    if (!fastboot) {
+      throw new Error("Fastboot did not expose its protocol serial number. The browser USB descriptor is advisory and cannot authorize installation.");
+    }
+    if (!expected || fastboot !== expected) {
+      throw new Error("The selected Fastboot interface is not the PSG1 authorized for this installation.");
     }
   }
 
@@ -281,20 +310,35 @@ export class WebFastbootPsg1 {
     await this.command("oem at-unlock-vboot");
   }
 
-  async flash(partition: "vbmeta" | "system", payload: Blob): Promise<void> {
+  async flash(
+    partition: "vbmeta" | "system",
+    payload: Blob,
+    beforeFlash?: () => Promise<void>
+  ): Promise<void> {
     await this.download(payload);
+    // `download:` only fills Fastboot's transient transfer buffer. Record the
+    // durable sent state immediately before `flash:` changes a partition.
+    await beforeFlash?.();
     await this.command(`flash:${partition}`);
   }
 
   /** Flash a verified raw ext4 system image through Fastbootd's download window. */
-  async flashSparseSystem(image: Blob, onProgress?: (completed: number, total: number) => void): Promise<void> {
+  async flashSparseSystem(
+    image: Blob,
+    onProgress?: (completed: number, total: number) => void,
+    partition: "system" = "system",
+    hooks?: SparseFlashHooks
+  ): Promise<void> {
+    if (partition !== "system") throw new Error("The signed release requested an unsupported Fastboot system partition.");
     const limit = await this.maxDownloadSize();
     const segments = await createAndroidSparseSegments(image, limit);
     for (let index = 0; index < segments.length; index += 1) {
       const segment = segments[index];
       if (!segment) throw new Error("Android sparse segment plan is incomplete.");
+      await hooks?.beforeSegment?.(index, segments.length);
       await this.download(segment);
-      await this.command("flash:system");
+      await this.command(`flash:${partition}`);
+      await hooks?.afterSegment?.(index, segments.length);
       onProgress?.(index + 1, segments.length);
     }
   }
@@ -302,6 +346,12 @@ export class WebFastbootPsg1 {
   async resizeLogicalSystem(size: number): Promise<void> {
     if (!Number.isSafeInteger(size) || size <= 0) throw new Error("System partition size is invalid.");
     await this.command(`resize-logical-partition:system:${size}`);
+  }
+
+  async assertLogicalSystemCapacity(size: number): Promise<void> {
+    if (!Number.isSafeInteger(size) || size <= 0) throw new Error("System partition size is invalid.");
+    const actual = await this.partitionSize("system");
+    if (actual < size) throw new Error("Fastbootd did not apply the required signed system partition resize.");
   }
 
   async wipeUserData(): Promise<void> {
@@ -386,10 +436,14 @@ export async function finalizeWebScan(
   adbScan: AdbCompatibilityScan,
   fastboot: WebFastbootPsg1
 ): Promise<WebCompatibilityScan> {
-  const fastbootSerial = normalizeSerial((await fastboot.getVariable("serialno")) || fastboot.normalizedUsbSerial);
+  await fastboot.assertMode("bootloader");
+  const fastbootSerial = normalizeSerial(await fastboot.getVariable("serialno"));
   const usbSerial = fastboot.normalizedUsbSerial;
   const bootloaderSerialCandidate = normalizeSerial(adbScan.bootloaderSerialCandidate);
-  if (!fastbootSerial || fastbootSerial !== bootloaderSerialCandidate) {
+  if (!fastbootSerial) {
+    throw new Error("Fastboot did not expose its protocol serial number. No access was activated and no device modification was attempted.");
+  }
+  if (fastbootSerial !== bootloaderSerialCandidate) {
     throw new Error(`The Rockchip CPU and Fastboot protocol serials do not match (CPU length ${bootloaderSerialCandidate.length}; Fastboot length ${fastbootSerial.length}). No access was activated and no device modification was attempted.`);
   }
   const fastbootUsbDescriptorVerified = Boolean(usbSerial) && usbSerial === fastbootSerial;

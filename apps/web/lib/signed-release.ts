@@ -9,10 +9,25 @@ export async function verifySignedReleaseDocument(document: unknown, signature: 
   const valid = await crypto.subtle.verify(
     "Ed25519", key, asArrayBuffer(base64Bytes(signature)), asArrayBuffer(new TextEncoder().encode(canonicalJson(document)))
   );
-  if (!valid) throw new Error("The signed beta release could not be verified in this browser.");
+  if (!valid) throw new Error("The signed release could not be verified in this browser.");
+}
+
+/**
+ * SHA-256 of the same RFC-8785-compatible canonical document bytes covered by
+ * the offline signature. The browser sends this at the destructive boundary
+ * so the API can reject a release that changed after this exact manifest was
+ * downloaded and verified.
+ */
+export async function canonicalSignedDocumentSha256(document: unknown): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalJson(document)));
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 // RFC 8785-compatible for the JSON values accepted by the signed manifest/profile schemas.
+export function canonicalSignedDocument(value: unknown): string {
+  return canonicalJson(value);
+}
+
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;

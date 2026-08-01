@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TREASURY_WALLET } from "@revive-psg1/contracts";
+import { installerModeSchema, TREASURY_WALLET } from "@revive-psg1/contracts";
 
 const environmentSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -30,6 +30,14 @@ const environmentSchema = z.object({
   EARLY_ACCESS_FREE: z.string().default("true").transform((value) => value === "true"),
   REVIVE_DEV_HARDWARE_FIXTURE: z.string().default("false").transform((value) => value === "true"),
   PUBLIC_SALES_ENABLED: z.string().default("false").transform((value) => value === "true"),
+  // This is the sole server-side installer availability switch. The older
+  // booleans remain parsed only so existing deployments can be upgraded
+  // without an environment-schema break; they do not override INSTALLER_MODE.
+  INSTALLER_MODE: installerModeSchema.default("scan_only"),
+  // Emergency brake for new destructive boundaries. Existing installations
+  // retain their exact signed resume path so a safety pause does not strand a
+  // handheld midway through a verified release.
+  INSTALLER_NEW_STARTS_ENABLED: z.string().default("true").transform((value) => value === "true"),
   COMPATIBILITY_CHECKER_ONLY: z.string().default("true").transform((value) => value === "true"),
   BETA_BROWSER_INSTALLER: z.string().default("false").transform((value) => value === "true"),
   // This does not open the beta cohort. It merely permits the one
@@ -64,6 +72,8 @@ export type Config = {
   earlyAccessFree: boolean;
   developmentHardwareFixture: boolean;
   publicSalesEnabled: boolean;
+  installerMode: "scan_only" | "private_beta" | "public";
+  installerNewStartsEnabled: boolean;
   compatibilityCheckerOnly: boolean;
   betaBrowserInstaller: boolean;
   betaHardwarePilotEnabled: boolean;
@@ -118,6 +128,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Config
     earlyAccessFree: value.EARLY_ACCESS_FREE,
     developmentHardwareFixture: value.REVIVE_DEV_HARDWARE_FIXTURE,
     publicSalesEnabled: value.PUBLIC_SALES_ENABLED,
+    installerMode: value.INSTALLER_MODE,
+    installerNewStartsEnabled: value.INSTALLER_NEW_STARTS_ENABLED,
     compatibilityCheckerOnly: value.COMPATIBILITY_CHECKER_ONLY,
     betaBrowserInstaller: value.BETA_BROWSER_INSTALLER,
     betaHardwarePilotEnabled: value.BETA_HARDWARE_PILOT_ENABLED

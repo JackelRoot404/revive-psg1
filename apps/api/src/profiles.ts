@@ -2,6 +2,11 @@ import { verify } from "node:crypto";
 import canonicalize from "canonicalize";
 import type { CompatibilityProfile, CompatibilitySnapshot, WebCompatibilitySnapshot } from "@revive-psg1/contracts";
 
+export type ProfileSelection =
+  | { status: "matched"; profile: CompatibilityProfile }
+  | { status: "not_recognized" }
+  | { status: "ambiguous"; priority: number; profileIds: string[] };
+
 function matches(value: string, patterns: string[]): boolean {
   return patterns.some((pattern) => new RegExp(pattern, "i").test(value));
 }
@@ -21,6 +26,27 @@ export function profileMatches(profile: CompatibilityProfile, snapshot: Compatib
   return hardwareMatches(profile, snapshot)
     && firmwareMatches(profile, snapshot.buildFingerprint, snapshot.buildIncremental);
 }
+
+/**
+ * Select only a unique highest-priority signed profile. Database row order is
+ * not a security boundary: a tie is deliberately rejected rather than being
+ * resolved by an implementation detail such as insertion order or profile ID.
+ */
+export function selectHighestPriorityProfile(candidates: CompatibilityProfile[]): ProfileSelection {
+  if (!candidates.length) return { status: "not_recognized" };
+  const priority = Math.max(...candidates.map((profile) => profile.priority));
+  const highest = candidates.filter((profile) => profile.priority === priority);
+  if (highest.length !== 1) {
+    return {
+      status: "ambiguous",
+      priority,
+      profileIds: highest.map((profile) => profile.id).sort((left, right) => left.localeCompare(right))
+    };
+  }
+  return { status: "matched", profile: highest[0]! };
+}
+
+export const selectProfileByPriority = selectHighestPriorityProfile;
 
 function hardwareMatches(profile: CompatibilityProfile, snapshot: CompatibilitySnapshot): boolean {
   return profile.product === snapshot.product
@@ -49,18 +75,31 @@ export function webProfileMatches(profile: CompatibilityProfile, snapshot: WebCo
 }
 
 export function webPreflightMatches(profile: CompatibilityProfile, snapshot: WebCompatibilitySnapshot): boolean {
+  return webPreflightBlockers(profile, snapshot).length === 0;
+}
+
+export function webPreflightBlockers(profile: CompatibilityProfile, snapshot: WebCompatibilitySnapshot): string[] {
   const system = profile.partitionConstraints.system;
   const superPartition = profile.partitionConstraints.super;
-  return snapshot.serialVerified
-    && snapshot.immutableSerialVerified
-    && snapshot.usbStable
-    && snapshot.recoveryCapable
-    && Boolean(system)
-    && Boolean(superPartition)
-    && snapshot.systemPartitionBytes >= system!.minSize
-    && snapshot.systemPartitionBytes <= system!.maxSize
-    && snapshot.superPartitionBytes >= superPartition!.minSize
-    && snapshot.superPartitionBytes <= superPartition!.maxSize
-    && snapshot.hostBytesAvailable >= snapshot.systemPartitionBytes
-    && (snapshot.batteryPercent >= 50 || snapshot.charging);
+  const blockers: string[] = [];
+  if (!snapshot.serialVerified || !snapshot.immutableSerialVerified) blockers.push("SERIAL_VERIFICATION_REQUIRED");
+  // USB descriptor serials are manufacturer-variable advisory metadata. The
+  // immutable CPU ↔ Fastboot protocol serial cross-check is represented by
+  // serialVerified/immutableSerialVerified; do not reject a valid PSG1 solely
+  // because the USB descriptor omits a serial.
+  if (!snapshot.usbStable) blockers.push("USB_STABILITY_REQUIRED");
+  if (!snapshot.recoveryCapable) blockers.push("RECOVERY_CAPABILITY_REQUIRED");
+  if (!system || !superPartition) {
+    blockers.push("PROFILE_PARTITION_CONSTRAINTS_MISSING");
+    return blockers;
+  }
+  if (snapshot.systemPartitionBytes < system.minSize || snapshot.systemPartitionBytes > system.maxSize) {
+    blockers.push("SYSTEM_PARTITION_OUT_OF_RANGE");
+  }
+  if (snapshot.superPartitionBytes < superPartition.minSize || snapshot.superPartitionBytes > superPartition.maxSize) {
+    blockers.push("SUPER_PARTITION_OUT_OF_RANGE");
+  }
+  if (snapshot.hostBytesAvailable < snapshot.systemPartitionBytes) blockers.push("HOST_STORAGE_INSUFFICIENT");
+  if (snapshot.batteryPercent < 50 && !snapshot.charging) blockers.push("BATTERY_OR_CHARGING_REQUIRED");
+  return blockers;
 }

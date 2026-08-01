@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { earlyAccessAllowed, launchGateSetComplete, sanitizeTelemetryRecord, sanitizeText } from "./app";
+import { compatibilityReportConsentGranted, earlyAccessAllowed, launchGateSetComplete, sanitizeTelemetryRecord, sanitizeText } from "./app";
 
 const gateKeys = [
   "beta_licenses_redeemed_10", "windows_success_5", "macos_success_5", "all_beta_profiles_signed",
@@ -32,4 +32,8 @@ describe("backend security invariants", () => {
   });
 
   it("bounds redacted crash data", () => expect(sanitizeText("x".repeat(20_000)).length).toBeLessThanOrEqual(16_000));
+  it("does not persist an optional compatibility report without explicit consent", () => {
+    expect(compatibilityReportConsentGranted({ consentToNotify: false })).toBe(false);
+    expect(compatibilityReportConsentGranted({ consentToNotify: true })).toBe(true);
+  });
 });

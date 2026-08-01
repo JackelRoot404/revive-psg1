@@ -1,10 +1,12 @@
 import { sha256Blob } from "./sha256";
+import type { WebCompatibilityScan } from "./webusb-psg1";
 
 export type DownloadArtifact = { id: string; size: number; sha256: string; objectKey: string };
 export type ArtifactProgress = { artifactId: string; downloaded: number; total: number; phase: "download" | "verify" };
 
 const ROOT = "revive-psg1-artifacts-v1";
 const JOURNAL = "active-installation.json";
+const RESUME_CONTEXT = "active-installation-resume.json";
 
 export type InstallationJournal = {
   deviceId: string;
@@ -13,7 +15,37 @@ export type InstallationJournal = {
   releaseVersion: string;
   artifactHashes: Record<string, string>;
   stage: string;
+  /** The last destructive operation being journaled; contains no secrets. */
+  operation: string;
+  /**
+   * A write-ahead state. `intent` is persisted before a command is attempted,
+   * `sent` immediately before the USB command, and `verified` only after the
+   * device acknowledged it. A later resume treats `intent`/`sent` as
+   * indeterminate and rechecks the physical PSG1 before continuing.
+   */
+  operationState: "intent" | "sent" | "verified" | "unknown";
+  /** Zero-based exact Fastboot transfer checkpoint; 0/1 for ordinary commands. */
+  operationIndex: number;
+  /** Number of idempotent transfers in this operation; 1 for ordinary commands. */
+  operationCount: number;
   updatedAt: string;
+};
+
+/**
+ * The opaque credential is scoped to one already-bound release and is rotated
+ * by the API whenever it is used. It remains in browser-origin persistent
+ * storage solely so a tab/browser crash in Fastboot can resume; never copy it
+ * to sessionStorage, logs, support messages, or a server journal.
+ */
+export type PersistentInstallationResume = {
+  licenseId: string;
+  deviceId: string;
+  bootloaderSerial: string;
+  profileId: string;
+  releaseVersion: string;
+  resumeCredential: string;
+  resumeCredentialExpiresAt: string;
+  scan: WebCompatibilityScan;
 };
 
 export async function downloadVerifiedArtifact(artifact: DownloadArtifact, url: string, onProgress?: (progress: ArtifactProgress) => void): Promise<File> {
@@ -62,7 +94,9 @@ export async function assertArtifactCapacity(artifacts: readonly Pick<DownloadAr
 
 /** Stores only non-secret resumable state. Tokens remain in session storage. */
 export async function saveInstallationJournal(journal: InstallationJournal): Promise<void> {
-  if (!journal.deviceId || !journal.bootloaderSerial || !journal.profileId || !journal.releaseVersion || !journal.stage) {
+  if (!journal.deviceId || !journal.bootloaderSerial || !journal.profileId || !journal.releaseVersion || !journal.stage
+    || !journal.operation || !isOperationState(journal.operationState)
+    || !isOperationSegment(journal.operationIndex, journal.operationCount)) {
     throw new Error("The installation journal is incomplete.");
   }
   const directory = await artifactDirectory();
@@ -75,12 +109,58 @@ export async function saveInstallationJournal(journal: InstallationJournal): Pro
 export async function loadInstallationJournal(): Promise<InstallationJournal | null> {
   try {
     const directory = await artifactDirectory();
-    const journal = JSON.parse(await (await directory.getFileHandle(JOURNAL)).getFile().then((file) => file.text())) as InstallationJournal;
-    if (!journal || typeof journal !== "object" || typeof journal.deviceId !== "string" || typeof journal.bootloaderSerial !== "string"
-      || typeof journal.profileId !== "string" || typeof journal.releaseVersion !== "string" || typeof journal.stage !== "string"
-      || !journal.artifactHashes || typeof journal.artifactHashes !== "object") return null;
-    return journal;
+    return normalizeInstallationJournal(JSON.parse(await (await directory.getFileHandle(JOURNAL)).getFile().then((file) => file.text())));
   } catch { return null; }
+}
+
+export async function savePersistentInstallationResume(context: PersistentInstallationResume): Promise<void> {
+  if (!isPersistentInstallationResume(context)) throw new Error("The durable installation resume record is incomplete.");
+  const directory = await artifactDirectory();
+  const handle = await directory.getFileHandle(RESUME_CONTEXT, { create: true });
+  const writable = await handle.createWritable();
+  await writable.write(JSON.stringify(context));
+  await writable.close();
+}
+
+export async function loadPersistentInstallationResume(): Promise<PersistentInstallationResume | null> {
+  try {
+    const directory = await artifactDirectory();
+    const value: unknown = JSON.parse(await (await directory.getFileHandle(RESUME_CONTEXT)).getFile().then((file) => file.text()));
+    return isPersistentInstallationResume(value) ? value : null;
+  } catch { return null; }
+}
+
+export async function clearPersistentInstallationResume(): Promise<void> {
+  try {
+    const directory = await artifactDirectory();
+    await directory.removeEntry(RESUME_CONTEXT);
+  } catch { /* A missing persistent journal is already cleared. */ }
+}
+
+export function normalizeInstallationJournal(value: unknown): InstallationJournal | null {
+  if (!value || typeof value !== "object") return null;
+  const journal = value as Partial<InstallationJournal>;
+  if (typeof journal.deviceId !== "string" || !journal.deviceId || typeof journal.bootloaderSerial !== "string" || !journal.bootloaderSerial
+    || typeof journal.profileId !== "string" || !journal.profileId || typeof journal.releaseVersion !== "string" || !journal.releaseVersion
+    || typeof journal.stage !== "string" || !journal.stage || !journal.artifactHashes || typeof journal.artifactHashes !== "object") return null;
+  // Journals written before write-ahead tracking remain resumable, but are
+  // intentionally treated as indeterminate rather than silently trusted.
+  const operation = typeof journal.operation === "string" && journal.operation ? journal.operation : "legacy_resume";
+  const operationState = isOperationState(journal.operationState) ? journal.operationState : "unknown";
+  const hasSegment = isOperationSegment(journal.operationIndex, journal.operationCount);
+  return {
+    deviceId: journal.deviceId,
+    bootloaderSerial: journal.bootloaderSerial,
+    profileId: journal.profileId,
+    releaseVersion: journal.releaseVersion,
+    artifactHashes: journal.artifactHashes as Record<string, string>,
+    stage: journal.stage,
+    operation,
+    operationState,
+    operationIndex: hasSegment ? Number(journal.operationIndex) : 0,
+    operationCount: hasSegment ? Number(journal.operationCount) : 1,
+    updatedAt: typeof journal.updatedAt === "string" ? journal.updatedAt : ""
+  };
 }
 
 async function downloadInto(handle: FileSystemFileHandle, artifact: DownloadArtifact, url: string, offset: number, onProgress?: (progress: ArtifactProgress) => void) {
@@ -132,4 +212,29 @@ function validateArtifact(artifact: DownloadArtifact) {
   if (!/^[a-z0-9][a-z0-9_-]{0,99}$/u.test(artifact.id) || !Number.isSafeInteger(artifact.size) || artifact.size <= 0 || !/^[a-f0-9]{64}$/u.test(artifact.sha256) || !artifact.objectKey) {
     throw new Error("Release manifest contains an invalid artifact descriptor.");
   }
+}
+
+function isOperationState(value: unknown): value is InstallationJournal["operationState"] {
+  return value === "intent" || value === "sent" || value === "verified" || value === "unknown";
+}
+
+function isOperationSegment(index: unknown, count: unknown): index is number {
+  return Number.isInteger(index) && Number.isInteger(count)
+    && typeof index === "number" && typeof count === "number"
+    && index >= 0 && count >= 1 && index < count && count <= 100_000;
+}
+
+function isPersistentInstallationResume(value: unknown): value is PersistentInstallationResume {
+  if (!value || typeof value !== "object") return false;
+  const context = value as Partial<PersistentInstallationResume>;
+  const scan = context.scan as Partial<WebCompatibilityScan> | undefined;
+  return typeof context.licenseId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(context.licenseId)
+    && typeof context.deviceId === "string" && /^[a-f0-9]{64}$/u.test(context.deviceId)
+    && typeof context.bootloaderSerial === "string" && Boolean(context.bootloaderSerial)
+    && typeof context.profileId === "string" && Boolean(context.profileId)
+    && typeof context.releaseVersion === "string" && Boolean(context.releaseVersion)
+    && typeof context.resumeCredential === "string" && /^rpi_[A-Za-z0-9_-]{32,128}$/u.test(context.resumeCredential)
+    && typeof context.resumeCredentialExpiresAt === "string" && Date.parse(context.resumeCredentialExpiresAt) > Date.now()
+    && Boolean(scan) && scan?.deviceId === context.deviceId && scan?.bootloaderSerial === context.bootloaderSerial
+    && scan?.serialVerified === true && scan?.immutableSerialVerified === true;
 }

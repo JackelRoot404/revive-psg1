@@ -8,6 +8,8 @@ const config: Config = {
   licenseKeyId: "test", solanaRpcPrimary: "http://localhost:8899",
   treasuryWallet: "EAjkNpwau3hB58C2M4U8rQWFANHRidA8XiB4Dvq78T4y", spacesRegion: "nyc3", spacesBucket: "test",
   crashReportsEnabled: true, earlyAccessFree: true, developmentHardwareFixture: false, publicSalesEnabled: false,
+  installerMode: "scan_only",
+  installerNewStartsEnabled: true,
   compatibilityCheckerOnly: true, betaBrowserInstaller: false, betaHardwarePilotEnabled: false
 };
 
@@ -49,6 +51,16 @@ describe("TokenService", () => {
   it("does not accept a desktop license token as web installer session authorization", async () => {
     const service = new TokenService(config);
     const token = await service.issueLicenseToken({ licenseId: "license-1", deviceId: "d".repeat(64), wallet: config.treasuryWallet });
+    await expect(service.verifySessionToken(token, "web-installer")).rejects.toThrow();
+  });
+
+  it("keeps a durable Fastboot-only resume token separate from normal installer sessions", async () => {
+    const service = new TokenService(config);
+    const token = await service.issueSessionToken({
+      audience: "web-installer-resume", subject: "00000000-0000-4000-8000-000000000001",
+      sessionId: "fastboot-resume:00000000-0000-4000-8000-000000000001", deviceId: "d".repeat(64), expiresIn: "15m"
+    });
+    await expect(service.verifySessionToken(token, "web-installer-resume")).resolves.toMatchObject({ sub: "00000000-0000-4000-8000-000000000001" });
     await expect(service.verifySessionToken(token, "web-installer")).rejects.toThrow();
   });
 });

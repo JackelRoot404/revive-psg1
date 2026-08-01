@@ -1,0 +1,31 @@
+; PSG1 Fastboot WinUSB INF TEMPLATE — DO NOT DISTRIBUTE AS A DRIVER.
+; Replace the marker values only after recording hardware IDs from a stock PSG1.
+; Never use USB\\VID_2207 alone: Rockchip's vendor ID is shared by other devices.
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=USBDevice
+ClassGuid={88BAE032-5A81-49F0-BC3D-A4FF138216D6}
+Provider=%Revive%
+CatalogFile=psg1-fastboot-winusb.cat
+DriverVer=MM/DD/YYYY,0.0.0.0
+
+[Manufacturer]
+%Revive%=PSG1,NTamd64
+
+[PSG1.NTamd64]
+%PSG1Fastboot.DeviceDesc%=WinUSB_Install,USB\VID_REPLACE&PID_REPLACE&MI_REPLACE
+
+[WinUSB_Install]
+Include=winusb.inf
+Needs=WINUSB.NT
+
+[WinUSB_Install.HW]
+AddReg=WinUSB_AddReg
+
+[WinUSB_AddReg]
+HKR,,DeviceInterfaceGUIDs,0x10000,"{REPLACE-WITH-STABLE-PSG1-FASTBOOT-GUID}"
+
+[Strings]
+Revive="Revive PSG1"
+PSG1Fastboot.DeviceDesc="Revive PSG1 Fastboot (WinUSB)"
