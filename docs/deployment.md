@@ -1,4 +1,7 @@
-# Deployment
+# Historical deployment reference
+
+> Hosted operation ended on 2026-08-10. This file is retained for community
+> research; it does not describe a currently supported service.
 
 > **Current release posture:** deploy and operate this service with
 > `INSTALLER_MODE=scan_only`. The code supports a future public path, but this
@@ -20,7 +23,7 @@ Connect the repository root. `netlify.toml` builds the `@revive-psg1/web` worksp
   hash, installer hash, and Authenticode signer. No production driver package
   is included in this repository.
 - Signed HTTPS `NEXT_PUBLIC_MACOS_DOWNLOAD_URL` and `NEXT_PUBLIC_WINDOWS_DOWNLOAD_URL` only after publisher-signature verification.
-- `NEXT_PUBLIC_LEGAL_ENTITY=biccsdev` and `NEXT_PUBLIC_SUPPORT_URL=https://discord.gg/QWYxkJgEHH`.
+- `NEXT_PUBLIC_LEGAL_ENTITY=biccsdev` and `NEXT_PUBLIC_SUPPORT_URL=https://github.com/biccsdev/revive-psg1/issues`.
 - Counsel-approved `NEXT_PUBLIC_GOVERNING_LAW`, `NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE`, and `NEXT_PUBLIC_DATA_RETENTION_POLICY`.
 
 Never put database, Spaces, signing, RPC-provider secret, or license credentials in Netlify. Restrict the production API CORS allowlist to the final Netlify custom domains.
@@ -68,8 +71,9 @@ attestation.
 `INSTALLER_NEW_STARTS_ENABLED=false` is the runtime emergency brake for new
 destructive boundaries; it preserves only an exact, authenticated resume for a
 device that already crossed its recorded boundary. A Fastboot-only recovery
-also needs the rotating, expiring resume credential stored in the same-origin
-browser journal and can restore only the existing release binding.
+also needs the expiring resume credential stored in the same-origin browser
+journal; it remains stable until expiry and can restore only the existing
+release binding.
 
 Do not set `INSTALLER_MODE=public` until the signed profile, production release,
 private artifact objects, public evidence, trusted hardware-attestation service,

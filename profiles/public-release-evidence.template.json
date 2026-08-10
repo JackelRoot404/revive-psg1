@@ -21,6 +21,21 @@
     "reviewedNonGmsGooglePackages": [],
     "reportSha256": "REPLACE_WITH_64_LOWERCASE_HEX"
   },
+  "artifactMetadata": {
+    "psg1-system-public-1": { "sha256": "REPLACE_WITH_64_LOWERCASE_HEX", "size": 0 },
+    "psg1-vbmeta-public-1": { "sha256": "REPLACE_WITH_64_LOWERCASE_HEX", "size": 0 },
+    "psg1-diagnostics-public-1": { "sha256": "REPLACE_WITH_64_LOWERCASE_HEX", "size": 0 },
+    "psg1-diagnostics-test-public-1": { "sha256": "REPLACE_WITH_64_LOWERCASE_HEX", "size": 0 },
+    "aurora-store-public-1": { "sha256": "REPLACE_WITH_64_LOWERCASE_HEX", "size": 0 },
+    "retroarch-public-1": { "sha256": "REPLACE_WITH_64_LOWERCASE_HEX", "size": 0 }
+  },
+  "avb": {
+    "vbmetaArtifactId": "psg1-vbmeta-public-1",
+    "algorithm": "SHA256_RSA4096",
+    "publicKeySha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "descriptorsSha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+    "rollbackIndex": 0
+  },
   "windowsFastbootDriver": {
     "packageUrl": "https://REPLACE_WITH_SIGNED_PSG1_FASTBOOT_DRIVER_PACKAGE",
     "installerSha256": "REPLACE_WITH_64_LOWERCASE_HEX",

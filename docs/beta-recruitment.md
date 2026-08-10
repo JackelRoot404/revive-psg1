@@ -1,4 +1,8 @@
-# Beta recruitment drafts — do not publish yet
+# Historical beta recruitment drafts
+
+> Recruitment ended when hosted operation stopped on 2026-08-10. This document
+> is preserved only as historical product research; its invitations and support
+> links are no longer active.
 
 Owner account: `@itsbiccs`
 Target cohort: up to 25 PSG1 owners, beginning with one supervised hardware-validation pilot. Seek Windows and macOS coverage before expanding the cohort.
@@ -13,7 +17,7 @@ Do not publish until beta entry criteria in `beta-runbook.md` pass, the applicat
 >
 > I’m opening applications for up to 25 FREE Revive PSG1 beta spots: a supervised test of a self-service browser tool for converting compatible PSG1 handhelds into general-purpose Android gaming devices with physical controls, Wi-Fi, Aurora Store & RetroArch.
 >
-> This is an application for the safety beta—not a public installer release. You’ll use desktop Chrome or Edge with your PSG1 connected over USB. Join the support/application server: https://discord.gg/QWYxkJgEHH
+> This was an application for the safety beta—not a public installer release.
 
 **Post 2**
 
@@ -37,7 +41,8 @@ I’m recruiting up to **25 PSG1 owners** for a hands-on safety beta through `@i
 - Guided read-only compatibility scan before anything changes
 - Direct communication during the supervised installation
 
-This announcement invites applications for a supervised safety beta. It is **not** a public installer release, and joining the server does not guarantee selection. Apply and get support at https://discord.gg/QWYxkJgEHH.
+This announcement invited applications for a supervised safety beta. It was
+**not** a public installer release and is no longer active.
 
 This is experimental, independent software and is **not affiliated with or endorsed by PlaySolana or Google**. Installation erases the PSG1 and leaves its bootloader unlocked, which reduces its security. There is a real risk of data loss, installation failure, or an unrecoverable device. The ROM/device is not Google-certified, so Play Integrity, banking/DRM apps and some games may refuse to work. Fingerprint is unvalidated and not guaranteed. Revive does not distribute Google Play Store or Google Mobile Services.
 

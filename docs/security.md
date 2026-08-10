@@ -53,9 +53,10 @@ server journal before/after each signed operation.
 For an ordinary interruption, a new cross-mode scan must prove the same device.
 If a tab crash leaves an already-bound device in Fastboot/Fastbootd, the wizard
 also keeps an expiring opaque resume credential in its same-origin persistent
-journal. The credential rotates on use and can retrieve only the existing
-device's exact active signed binding and journal checkpoint; it cannot activate,
-rebind, or start a different installation. The selected Fastboot protocol serial
+journal. The credential remains stable until expiry so a tab crash cannot lose a
+replacement response. It can retrieve only the existing device's exact active
+signed binding and journal checkpoint; it cannot activate, rebind, or start a
+different installation. The selected Fastboot protocol serial
 is checked against the stored binding before that request. This remains a
 browser-side continuity check, not independent hardware attestation. An
 emergency `INSTALLER_NEW_STARTS_ENABLED=false` pause blocks new boundaries while

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/biccsdev/revive-psg1/security/advisories/new
+    about: Report authorization, credential, privacy, or device-damage vulnerabilities privately.

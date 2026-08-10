@@ -106,6 +106,7 @@ export async function buildApp(dependencies: Dependencies) {
       "req.headers.authorization", "req.headers.cookie", "req.body.signature", "req.body.pairingProof",
       "req.body.transactionSignature", "req.body.wallet", "req.body.deviceId", "req.body.profileCandidate",
       "req.body.browserNonce", "req.body.requestNonce", "req.body.betaInviteToken", "req.body.recoveryCredential",
+      "req.body.resumeCredential",
       "req.body.reason", "req.body.stack",
       "req.params.deviceId"
     ] }
@@ -330,6 +331,7 @@ export async function buildApp(dependencies: Dependencies) {
       if (!hasInstallationBinding(license)) return reply.code(409).send({ code: "INSTALLATION_BINDING_MISSING" });
       const release = await activeSignedReleaseForInstallationBinding(db, config, installationBindingOf(license));
       if (!release || !evidenceReadyForResume(release.manifest)) return reply.code(409).send({ code: "RESUME_RELEASE_UNAVAILABLE" });
+      const resume = hasLiveInstallationResumeCredential(license) ? null : await rotateInstallationResumeCredential(db, license.id);
       const webInstallerToken = await tokens.issueSessionToken({
         audience: "web-installer", subject: license.id, sessionId: session.id, deviceId: session.deviceId, expiresAt: session.expiresAt
       });
@@ -341,6 +343,7 @@ export async function buildApp(dependencies: Dependencies) {
       return reply.code(200).send({
         activation: "public_resume", resume: true, free: true, deviceBound: true, alreadyLicensed: true,
         licenseId: license.id, orderId: license.orderId, webInstallerToken,
+        ...(resume ? { resumeCredential: resume.credential, resumeCredentialExpiresAt: resume.expiresAt.toISOString() } : {}),
         expiresInSeconds: Math.max(1, Math.floor((session.expiresAt.getTime() - Date.now()) / 1000))
       });
     }
@@ -462,6 +465,11 @@ export async function buildApp(dependencies: Dependencies) {
     if (!release || !evidenceReadyForResume(release.manifest)) {
       return reply.code(409).send({ code: "RESUME_RELEASE_UNAVAILABLE" });
     }
+    // A fresh browser session can bootstrap the durable Fastboot-only
+    // recovery record. The browser persists this response before sending any
+    // further command; Fastboot-only resume below deliberately does not rotate
+    // the credential, avoiding a crash window that could lose the sole secret.
+    const resume = hasLiveInstallationResumeCredential(license) ? null : await rotateInstallationResumeCredential(db, license.id);
     const webInstallerToken = await tokens.issueSessionToken({
       audience: "web-installer",
       subject: license.id,
@@ -479,6 +487,7 @@ export async function buildApp(dependencies: Dependencies) {
       resume: true,
       licenseId: license.id,
       webInstallerToken,
+      ...(resume ? { resumeCredential: resume.credential, resumeCredentialExpiresAt: resume.expiresAt.toISOString() } : {}),
       expiresInSeconds: Math.max(1, Math.floor((session.expiresAt.getTime() - Date.now()) / 1000))
     };
   });
@@ -486,7 +495,9 @@ export async function buildApp(dependencies: Dependencies) {
   // A browser crash can leave the PSG1 in bootloader Fastbootd, where an ADB
   // scan cannot be restarted. The credential below is created only at the
   // irreversible boundary, lives only in the browser's same-origin persistent
-  // journal, rotates on use, and restores only this exact signed binding.
+  // journal, and restores only this exact signed binding. It intentionally
+  // remains stable until expiry: rotating before the browser can durably
+  // write the response could strand a tab-crashed Fastboot session.
   app.post("/v1/public/fastboot-resume", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
     const input = fastbootResumeSchema.parse(request.body);
     const license = await activeLicenseForDevice(db, input.deviceId);
@@ -501,7 +512,6 @@ export async function buildApp(dependencies: Dependencies) {
     if (!release || !evidenceReadyForResume(release.manifest)) {
       return reply.code(409).send({ code: "RESUME_RELEASE_UNAVAILABLE" });
     }
-    const resume = await rotateInstallationResumeCredential(db, license.id);
     const webInstallerToken = await tokens.issueSessionToken({
       audience: "web-installer-resume", subject: license.id, sessionId: `fastboot-resume:${license.id}`,
       deviceId: license.deviceId, expiresIn: "15m"
@@ -514,8 +524,6 @@ export async function buildApp(dependencies: Dependencies) {
       resume: true,
       licenseId: license.id,
       webInstallerToken,
-      resumeCredential: resume.credential,
-      resumeCredentialExpiresAt: resume.expiresAt.toISOString(),
       expiresInSeconds: 15 * 60
     };
   });
@@ -1245,6 +1253,15 @@ export async function buildApp(dependencies: Dependencies) {
         operationCount: entry.operationCount,
         createdAt
       });
+      if (entry.stage === "complete") {
+        // A completed diagnostics checkpoint has no destructive work left to
+        // resume. Revoke the durable credential so a copied browser record
+        // cannot mint another installer token after success.
+        await tx.update(licenses).set({
+          installationResumeCredentialDigest: null,
+          installationResumeCredentialExpiresAt: null
+        }).where(and(eq(licenses.id, license.id), eq(licenses.status, "active")));
+      }
       return { createdAt, sequence };
     });
     if ("transitionError" in journalWrite) {
@@ -1912,6 +1929,12 @@ function newInstallationResumeCredential(): string {
   return `rpi_${randomNonce(32)}`;
 }
 
+function hasLiveInstallationResumeCredential(license: typeof licenses.$inferSelect, now = new Date()): boolean {
+  return Boolean(license.installationResumeCredentialDigest
+    && license.installationResumeCredentialExpiresAt
+    && license.installationResumeCredentialExpiresAt > now);
+}
+
 async function rotateInstallationResumeCredential(db: Database, licenseId: string): Promise<{ credential: string; expiresAt: Date }> {
   const credential = newInstallationResumeCredential();
   const expiresAt = new Date(Date.now() + INSTALLATION_RESUME_CREDENTIAL_TTL_SECONDS * 1000);
@@ -1966,10 +1989,19 @@ export function betaManifestEvidenceReady(manifest: ReleaseManifest): boolean {
 
 export function publicManifestEvidenceReady(manifest: ReleaseManifest): boolean {
   const required = ["android_system", "verified_boot", "diagnostics", "diagnostics_test", "aurora_store", "retroarch"];
-  if (!manifest.publicEvidence) return false;
+  const evidence = manifest.publicEvidence;
+  if (!evidence) return false;
   const privateArtifacts = manifest.artifacts.filter((artifact) => artifact.delivery === "private");
+  const system = privateArtifacts.find((artifact) => artifact.component === "android_system" && artifact.kind === "system");
+  const vbmeta = privateArtifacts.find((artifact) => artifact.component === "verified_boot" && artifact.kind === "vbmeta");
   return required.every((component) => privateArtifacts.some((artifact) => artifact.component === component))
-    && manifest.artifacts.every((artifact) => manifest.publicEvidence?.artifactSha256[artifact.id] === artifact.sha256);
+    && Boolean(system && vbmeta)
+    && manifest.artifacts.every((artifact) => evidence.artifactSha256[artifact.id] === artifact.sha256)
+    && manifest.artifacts.every((artifact) => evidence.artifactMetadata[artifact.id]?.sha256 === artifact.sha256
+      && evidence.artifactMetadata[artifact.id]?.size === artifact.size)
+    && evidence.source.expandedSystemSha256 === system?.sha256
+    && evidence.avb.vbmetaArtifactId === vbmeta?.id
+    && evidence.artifactMetadata[evidence.avb.vbmetaArtifactId]?.sha256 === vbmeta?.sha256;
 }
 
 function evidenceReadyForResume(manifest: ReleaseManifest): boolean {
@@ -2065,6 +2097,12 @@ export function validateInstallationJournalTransition(
       if (next.operationState === "verified" && checkpoint.verifiableAfterReconnect === true && previous.stage === checkpoint.after) return null;
     }
     if (previous.operationState === "verified" && next.operationState === "verified" && next.stage === checkpoint.after) return null;
+    // A reboot can be acknowledged by Fastboot/ADB just before the device
+    // fails to leave its source mode. Repeating that exact idempotent reboot
+    // from the source-mode retry is safe even when the first journal entry was
+    // already marked verified.
+    if (previous.operationState === "verified" && next.operationState === "intent"
+      && checkpoint.idempotent && next.stage === checkpoint.before) return null;
     return "The journal state must advance intent → sent → verified, or retry only an idempotent signed checkpoint.";
   }
 

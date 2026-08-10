@@ -20,7 +20,7 @@ import { deviceIdForSerial, finalizeWebScan, WebAdbPsg1, WebFastbootPsg1, type W
 
 const API = apiUrl();
 const WEB_VERSION = "0.3.0-browser";
-const DISCORD_URL = "https://discord.gg/NqE4UeqbEM";
+const COMMUNITY_URL = "https://github.com/biccsdev/revive-psg1/issues";
 
 type Stage = "intro" | "adb" | "bootloader" | "fastbootWaiting" | "fastbootReady" | "fastboot" | "session" | "scanOutcome" | "publicActivate" | "betaCode" | "activating" | "ready" | "preparing" | "risk" | "install";
 type AdbCompatibilityScan = Awaited<ReturnType<WebAdbPsg1["readCompatibility"]>>;
@@ -158,6 +158,7 @@ export function Wizard({ developmentHardwareFixture }: WizardProps) {
   const decision = session ? resolveDecision(session, scan) : null;
   const outcome = session && decision ? scanOutcome(decision, scan) : null;
   const privateBeta = decision?.installerMode === "private_beta";
+  const simulatedFixture = Boolean(developmentHardwareFixture && scan?.installationState === "development_fixture");
   const browserInstallationAllowed = canBeginBrowserInstallation(session, scan, installerToken)
     || (resumeAuthorized && Boolean(installerToken) && isSafeAuthorizedResume(session, scan));
   const compatibilityReportAllowed = Boolean(session && scan && decision && outcome && canOfferCompatibilityReport(session, scan, decision, outcome));
@@ -231,8 +232,22 @@ export function Wizard({ developmentHardwareFixture }: WizardProps) {
       const created = await createWebSession(completed, true);
       resetCompatibilityReport();
       setResumeAuthorized(false);
-      setSession(created); rememberResumeContext(created, completed); setStage(stageForSession(created, completed));
+      setSession(created); rememberResumeContext(created, completed);
+      const simulatedDecision = resolveDecision(created, completed);
+      setStage(simulatedDecision.installerMode === "private_beta" ? "betaCode" : stageForSession(created, completed));
     } catch (cause) { setError(messageOf(cause)); setStage("intro"); }
+  }
+
+  function authorizeSimulatedPilot() {
+    if (!simulatedFixture || !privateBeta) return;
+    setError("");
+    setArtifactsReady(false);
+    setArtifactStatus("");
+    setRiskAccepted(false);
+    setConfirmation("");
+    setInstallStep("start");
+    setInstallStatus("");
+    setStage("ready");
   }
 
   async function redeemBetaCode() {
@@ -308,15 +323,12 @@ export function Wizard({ developmentHardwareFixture }: WizardProps) {
         deviceId: selectedDeviceId,
         resumeCredential: durableResume.resumeCredential
       });
-      if (!access.resumeCredential || !access.resumeCredentialExpiresAt) {
-        throw new Error("The server did not return a renewed exact-resume credential.");
-      }
-      const renewed = { ...durableResume, resumeCredential: access.resumeCredential, resumeCredentialExpiresAt: access.resumeCredentialExpiresAt };
-      await savePersistentInstallationResume(renewed);
-      setDurableResume(renewed);
-      setScan(renewed.scan); setSession(null);
+      // The server intentionally keeps the opaque credential stable through
+      // Fastboot-only resume. Replacing it before this tab can durably write
+      // the response would create a crash window with no recovery secret.
+      setScan(durableResume.scan); setSession(null);
       await fastboot.close().catch(() => undefined); fastboot = null;
-      await authorizeRelease({ ...access, resume: true }, renewed.scan);
+      await authorizeRelease({ ...access, resume: true }, durableResume.scan);
     } catch (cause) {
       setError(messageOf(cause, { fastbootPicker: true })); setStage("intro");
     } finally { await fastboot?.close().catch(() => undefined); }
@@ -386,10 +398,41 @@ export function Wizard({ developmentHardwareFixture }: WizardProps) {
     } else {
       setInstallStep("start"); setResumeCheckpoint(null); setInstallStatus("");
     }
+    // A normal web-session resume can bootstrap the same-origin durable
+    // Fastboot-only record. Keep the current tab usable if browser storage is
+    // unavailable; the user can still continue this authenticated session,
+    // but the UI should make the reduced recovery guarantee explicit.
+    const resumeScan = scanOverride ?? scan;
+    if (access.resume && access.resumeCredential && access.resumeCredentialExpiresAt && resumeScan) {
+      try {
+        await savePersistentInstallationResume({
+          licenseId: access.licenseId,
+          deviceId: resumeScan.deviceId,
+          bootloaderSerial: resumeScan.bootloaderSerial,
+          profileId: parsedProfile.data.id,
+          releaseVersion: parsedManifest.data.version,
+          resumeCredential: access.resumeCredential,
+          resumeCredentialExpiresAt: access.resumeCredentialExpiresAt,
+          scan: resumeScan
+        });
+        const persisted = await loadPersistentInstallationResume();
+        if (persisted) setDurableResume(persisted);
+      } catch {
+        setInstallStatus("Durable browser recovery is unavailable; keep this tab open while the signed installation continues.");
+      }
+    }
     setStage("ready");
   }
 
   async function reviewInstallationReadiness() {
+    if (simulatedFixture) {
+      if (!artifactsReady || confirmation !== "ERASE PSG1" || !riskAccepted) return;
+      setError("");
+      setInstallStep("complete");
+      setInstallStatus("Development simulation complete. No entitlement, artifact download, USB command, wipe, unlock, or flash occurred.");
+      setStage("install");
+      return;
+    }
     const manifest = release?.manifest;
     const profileId = release?.profile?.id;
     if (!browserInstallationAllowed || !scan || !licenseId || !installerToken || !artifactsReady || confirmation !== "ERASE PSG1" || !riskAccepted
@@ -473,6 +516,14 @@ export function Wizard({ developmentHardwareFixture }: WizardProps) {
   }
 
   async function prepareArtifacts() {
+    if (simulatedFixture) {
+      setError("");
+      setStage("preparing");
+      setArtifactsReady(true);
+      setArtifactStatus("Simulated signed-artifact verification completed. No files were downloaded.");
+      setStage("risk");
+      return;
+    }
     if (!browserInstallationAllowed || !release?.manifest?.artifacts || !release.manifest.flashPlan || !release.downloadUrls) return;
     setError(""); setArtifactStatus(""); setStage("preparing");
     try {
@@ -512,18 +563,20 @@ export function Wizard({ developmentHardwareFixture }: WizardProps) {
       {...(publicResumeAllowed ? { resumeAction: { onResume: resumePublicInstallation } } : {})}
     />}
     {stage === "publicActivate" && <div className="success"><Step number={3} title="Free public activation" /><p>This compatible, stock-locked PSG1 is cleared for the public release. Activation is free and binds the signed installer authorization to this device.</p><button className="button primary wide" disabled={!canUsePublicInstaller(session, scan)} onClick={activatePublicAccess}>Activate free public access</button>{publicResumeAllowed && <button className="button ghost wide" onClick={resumePublicInstallation}>Resume an interrupted installation</button>}<small>No code, payment, or Discord ticket is required. Resume only continues an installation that already crossed the signed boundary on this exact PSG1.</small></div>}
-    {stage === "betaCode" && privateBeta && <div className="wizard-step"><Step number={3} title="Redeem beta tester code" /><p>This private beta remains supervised. Join Discord, open a ticket, and use the one-time code issued for this compatible PSG1.</p><a className="button ghost wide" href={DISCORD_URL} target="_blank" rel="noreferrer">Join Discord and open a ticket ↗</a><label className="field">One-time beta code<input value={betaCode} onChange={(event) => setBetaCode(event.target.value)} placeholder="rpb_…" autoComplete="off" spellCheck={false} /></label><button className="button primary wide" disabled={!betaCode.trim() || !canUsePrivateBeta(session, scan)} onClick={redeemBetaCode}>Activate free beta access</button><button className="button ghost wide" disabled={!canUsePrivateBeta(session, scan)} onClick={resumeBetaInstallation}>Resume this PSG1&apos;s beta</button><small>Do not share your code. It cannot be moved to another PSG1 after redemption.</small></div>}
+    {stage === "betaCode" && privateBeta && (simulatedFixture
+      ? <div className="wizard-step"><Step number={3} title="Simulate hardware-pilot authorization" /><p>This development-only path previews the pilot screens without consuming your one-use invite or authorizing a real device.</p><button className="button primary wide" onClick={authorizeSimulatedPilot}>Continue simulated pilot</button><small>No entitlement, artifact download, USB command, wipe, unlock, or flash can occur in this simulation.</small></div>
+      : <div className="wizard-step"><Step number={3} title="Redeem beta tester code" /><p>The original private beta has ended. This path remains only for community development; no new codes are issued.</p><a className="button ghost wide" href={COMMUNITY_URL} target="_blank" rel="noreferrer">View community issues ↗</a><label className="field">One-time beta code<input value={betaCode} onChange={(event) => setBetaCode(event.target.value)} placeholder="rpb_…" autoComplete="off" spellCheck={false} /></label><button className="button primary wide" disabled={!betaCode.trim() || !canUsePrivateBeta(session, scan)} onClick={redeemBetaCode}>Activate free beta access</button><button className="button ghost wide" disabled={!canUsePrivateBeta(session, scan)} onClick={resumeBetaInstallation}>Resume this PSG1&apos;s beta</button><small>Do not share your code. It cannot be moved to another PSG1 after redemption.</small></div>)}
     {stage === "activating" && <Progress title={privateBeta ? "Binding this code to your PSG1 and authorizing the signed beta release…" : "Authorizing the signed release for this PSG1…"} />}
-    {stage === "ready" && <div className="success"><strong>✓ {privateBeta ? "Beta release" : "Release"} authorized</strong><p>Release {release?.manifest?.version ?? "authorized"} is signed for this PSG1. Aurora Store and RetroArch are included as verified post-flash APKs.</p><button className="button primary wide" disabled={!browserInstallationAllowed} onClick={prepareArtifacts}>Download and verify release artifacts</button></div>}
+    {stage === "ready" && <div className="success"><strong>✓ {simulatedFixture ? "Simulated pilot" : privateBeta ? "Beta release" : "Release"} authorized</strong><p>{simulatedFixture ? "This is a UI-only authorization preview. No real release, entitlement, or artifact is being used." : <>Release {release?.manifest?.version ?? "authorized"} is signed for this PSG1. Aurora Store and RetroArch are included as verified post-flash APKs.</>}</p><button className="button primary wide" disabled={!simulatedFixture && !browserInstallationAllowed} onClick={prepareArtifacts}>{simulatedFixture ? "Simulate artifact verification" : "Download and verify release artifacts"}</button></div>}
     {stage === "preparing" && <Progress title={artifactStatus || "Preparing signed release artifacts in persistent browser storage…"} />}
-    {stage === "risk" && <div className="wizard-step"><Step number={4} title="Irreversible installation" /><div className="warning"><strong>No echOS recovery image is provided.</strong><p>This process erases all data, leaves the bootloader unlocked, may make restoration impossible, and can leave the device unusable. {privateBeta ? "Keep your Discord support ticket open." : "Continue only if you accept those risks."}</p></div><p className="success">✓ {artifactStatus || "Signed release artifacts verified"}</p><label className="checkbox"><input type="checkbox" checked={riskAccepted} onChange={(event) => setRiskAccepted(event.target.checked)} /> I understand and accept the irreversible installation risks.</label><label className="field">Type <b>ERASE PSG1</b> to start<input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" /></label><button className="button danger wide" disabled={!browserInstallationAllowed || !artifactsReady || !riskAccepted || confirmation !== "ERASE PSG1"} onClick={reviewInstallationReadiness}>Review installation readiness</button></div>}
-    {stage === "install" && <div className="pending"><strong>{installStep === "complete" ? `✓ ${privateBeta ? "Beta " : ""}installation complete` : "Destructive boundary recorded."}</strong><p>{browserInstallationAllowed ? installInstruction(installStep, privateBeta) : "This browser session is not authorized to send Fastboot commands. No device change was made."}</p>{browserInstallationAllowed && installStep !== "complete" && <button className="button danger wide" onClick={continueInstallation}>{installButton(installStep)}</button>}<small>{installStatus || "Do not unlock, flash, or use generic Fastboot commands outside this signed installer."}</small></div>}
+    {stage === "risk" && <div className="wizard-step"><Step number={4} title="Irreversible installation" /><div className="warning"><strong>No echOS recovery image is provided.</strong><p>This process erases all data, leaves the bootloader unlocked, may make restoration impossible, and can leave the device unusable. {simulatedFixture ? "This development preview will stop before every device command." : privateBeta ? "This historical beta path is unsupported." : "Continue only if you accept those risks."}</p></div><p className="success">✓ {artifactStatus || "Signed release artifacts verified"}</p><label className="checkbox"><input type="checkbox" checked={riskAccepted} onChange={(event) => setRiskAccepted(event.target.checked)} /> I understand and accept the irreversible installation risks.</label><label className="field">Type <b>ERASE PSG1</b> to start<input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" /></label><button className="button danger wide" disabled={(!simulatedFixture && !browserInstallationAllowed) || !artifactsReady || !riskAccepted || confirmation !== "ERASE PSG1"} onClick={reviewInstallationReadiness}>{simulatedFixture ? "Complete safe simulation" : "Review installation readiness"}</button></div>}
+    {stage === "install" && <div className="pending"><strong>{simulatedFixture ? "✓ Hardware-pilot simulation complete" : installStep === "complete" ? `✓ ${privateBeta ? "Beta " : ""}installation complete` : "Destructive boundary recorded."}</strong><p>{simulatedFixture ? "The complete authorization, artifact, and risk-confirmation UI was exercised without touching a device." : browserInstallationAllowed ? installInstruction(installStep, privateBeta) : "This browser session is not authorized to send Fastboot commands. No device change was made."}</p>{!simulatedFixture && browserInstallationAllowed && installStep !== "complete" && <button className="button danger wide" onClick={continueInstallation}>{installButton(installStep)}</button>}<small>{installStatus || "Do not unlock, flash, or use generic Fastboot commands outside this signed installer."}</small></div>}
     {error && <p className="error" role="alert">{error}</p>}
     {needsWindowsFastbootSetup && <div className="notice"><strong>Windows Fastboot setup</strong><p>Install the WinUSB driver for <b>USB Download Gadget</b> only, then retry this step. Do not replace the <b>Android ADB Interface</b> driver.</p>{signedWindowsDriver ? <><a className="text-link" href={signedWindowsDriver.packageUrl} target="_blank" rel="noreferrer">Download signed PSG1 Fastboot driver ↗</a><small>Signed release record: installer SHA-256 {signedWindowsDriver.installerSha256}; catalog SHA-256 {signedWindowsDriver.catalogSha256}; signer {signedWindowsDriver.authenticodeSigner}.</small></> : <Link className="text-link" href="/docs#windows-fastboot">Open the safe Windows setup steps →</Link>}</div>}
   </section>;
 }
 
-function Step({ number, title }: { number: number; title: string }) { return <h2><span>{number}</span>{title}</h2>; }
+function Step({ number, title }: { number: number; title: string }) { return <h2><span>{number}.</span>{" "}{title}</h2>; }
 function Progress({ title }: { title: string }) { return <div className="pending"><strong>{title}</strong><div className="scanner"><i /><span>Keep the cable connected.</span></div></div>; }
 
 function ScanOutcomePanel({ outcome, blockers, reportAction, resumeAction }: { outcome: ScanOutcome; blockers: string[]; reportAction?: CompatibilityReportAction; resumeAction?: InstallationResumeAction }) {
@@ -797,6 +850,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   DESTRUCTIVE_TEST_MODE_BLOCKED: "Destructive installation is blocked for modified or simulated devices.",
   UNSUPPORTED_FIRMWARE: "This firmware is not supported. No modification was performed.",
   PUBLIC_RESUME_NOT_FOUND: "No previously started public installation was found for this PSG1.",
+  FASTBOOT_RESUME_NOT_FOUND: "The saved Fastboot resume record is expired or no longer matches this PSG1. Re-run the read-only scan while the device is in Android, if possible.",
   RESUME_RELEASE_UNAVAILABLE: "The exact signed release for this interrupted installation is not available. No Fastboot command was sent.",
   INSTALLATION_BINDING_MISMATCH: "This browser session does not match the exact signed release already bound to this PSG1.",
   INSTALLATION_RELEASE_MISMATCH: "The signed release changed or does not match this PSG1. No Fastboot command was sent.",

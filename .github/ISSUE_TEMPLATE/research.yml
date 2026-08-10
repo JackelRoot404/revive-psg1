@@ -1,0 +1,31 @@
+name: Hardware or release research
+description: Propose consented, redacted evidence that advances a blocked safety gate
+title: "[Research]: "
+labels: ["research", "help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: "Read docs/community-handoff.md first. Fixtures and modified devices do not satisfy stock-hardware gates."
+  - type: textarea
+    id: gate
+    attributes:
+      label: Safety gate
+      description: Which exact handoff gate would this evidence address?
+    validations:
+      required: true
+  - type: textarea
+    id: method
+    attributes:
+      label: Read-only method
+      description: Describe collection, consent, redaction, and independent verification.
+    validations:
+      required: true
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints
+      options:
+        - label: No destructive device command is required to gather this evidence.
+          required: true
+        - label: No private key, raw serial, firmware dump, or personal data will be posted.
+          required: true

@@ -1,4 +1,8 @@
-# Tester launch checklist
+# Historical tester launch checklist
+
+> Hosted operation and tester recruitment ended on 2026-08-10. Community
+> maintainers must create a new reviewed launch process rather than treating
+> this checklist as approval to flash devices.
 
 ## Publish the website
 
@@ -47,5 +51,5 @@ The marketing site can go live while checkout and destructive installation remai
 - [ ] Configure API health, latency, payment anomaly, license anomaly, database, and storage alerts.
 - [ ] Test PostgreSQL backup restoration and document the recovery time.
 - [ ] Confirm private Spaces URLs expire and support range requests.
-- [ ] Publish support expectations and incident updates in `https://discord.gg/QWYxkJgEHH`.
+- [ ] Publish support expectations and incident updates in the community's chosen, documented support channel.
 - [ ] Perform a final dependency, secret, CodeQL, release-signature, and production-header review.

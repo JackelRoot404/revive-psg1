@@ -85,6 +85,11 @@ describe("public contracts", () => {
         checkedPaths: ["/system/app", "/system/priv-app", "/product/app"], detectedGmsPackages: [],
         reviewedNonGmsGooglePackages: [], reportSha256: "c".repeat(64)
       },
+      artifactMetadata: { system: { sha256: "f".repeat(64), size: 123 }, vbmeta: { sha256: "e".repeat(64), size: 456 } },
+      avb: {
+        vbmetaArtifactId: "vbmeta", algorithm: "SHA256_RSA4096",
+        publicKeySha256: "1".repeat(64), descriptorsSha256: "2".repeat(64), rollbackIndex: 0
+      },
       windowsFastbootDriver: {
         packageUrl: "https://example.com/psg1-driver.msi", installerSha256: "d".repeat(64),
         catalogSha256: "e".repeat(64), authenticodeSigner: "Revive PSG1", hardwareIds: ["USB\\VID_1234&PID_ABCD&MI_01"],
@@ -103,6 +108,8 @@ describe("public contracts", () => {
       }
     };
     expect(publicEvidenceSchema.parse(evidence).stockPsg1Validation.status).toBe("passed");
+    expect(publicEvidenceSchema.safeParse({ ...evidence, windowsFastbootDriver: { ...evidence.windowsFastbootDriver, testedWindowsVersions: ["windows_10", "windows_10"] } }).success).toBe(false);
+    expect(publicEvidenceSchema.safeParse({ ...evidence, avb: { ...evidence.avb, algorithm: "NONE" } }).success).toBe(false);
     const { stockPsg1Validation: _validation, ...withoutValidation } = evidence;
     expect(publicEvidenceSchema.safeParse(withoutValidation).success).toBe(false);
   });

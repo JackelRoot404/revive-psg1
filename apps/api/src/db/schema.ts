@@ -138,7 +138,7 @@ export const licenses = pgTable("licenses", {
   installationReleaseVersion: varchar("installation_release_version", { length: 64 }),
   installationManifestSha256: varchar("installation_manifest_sha256", { length: 64 }),
   installationArtifactHashes: jsonb("installation_artifact_hashes"),
-  // A rotating opaque credential is kept only in the same-origin persistent
+  // An expiring opaque credential is kept only in the same-origin persistent
   // browser journal. It restores an already-bound release after a tab/browser
   // crash in Fastboot; it cannot create a fresh entitlement.
   installationResumeCredentialDigest: varchar("installation_resume_credential_digest", { length: 64 }),

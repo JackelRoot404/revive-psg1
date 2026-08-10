@@ -32,9 +32,9 @@ export type InstallationJournal = {
 };
 
 /**
- * The opaque credential is scoped to one already-bound release and is rotated
- * by the API whenever it is used. It remains in browser-origin persistent
- * storage solely so a tab/browser crash in Fastboot can resume; never copy it
+ * The opaque credential is scoped to one already-bound release and remains
+ * stable until its server-enforced expiry. It remains in browser-origin
+ * persistent storage solely so a tab/browser crash in Fastboot can resume; never copy it
  * to sessionStorage, logs, support messages, or a server journal.
  */
 export type PersistentInstallationResume = {

@@ -1,0 +1,22 @@
+From: Revive PSG1 build preparation
+Subject: [LOCAL BUILD ONLY] Bound Soong primary-builder memory
+
+The Android 15 Soong graph process exceeded a 24 GiB Docker VM limit under
+Rosetta. Go 1.23 supports GOMEMLIMIT, so keep the graph builder below 20 GiB
+and leave headroom for the VM, Ninja, and the Docker control plane.
+
+This changes build-tool garbage-collection behavior only. It does not alter
+target source, packages, properties, signing, or generated Android contents.
+
+diff --git a/ui/build/soong.go b/ui/build/soong.go
+--- a/ui/build/soong.go
++++ b/ui/build/soong.go
+@@ -213,5 +213,8 @@ func (pb PrimaryBuilderFactory) primaryBuilderInvocation(config Config) bootstra
+ 	commonArgs = append(commonArgs, "-l", filepath.Join(pb.config.FileListDir(), "Android.bp.list"))
+ 	invocationEnv := make(map[string]string)
++	// Local build-host constraint; Go 1.23 treats this as a soft runtime limit.
++	// Keep enough VM headroom for Ninja and Docker while generating the graph.
++	invocationEnv["GOMEMLIMIT"] = "20GiB"
+ 	if pb.debugPort != "" {
+ 		//debug mode
+ 		commonArgs = append(commonArgs, "--delve_listen", pb.debugPort,

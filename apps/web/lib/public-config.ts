@@ -28,7 +28,7 @@ export function solanaRpcUrl(): string {
 
 export const legalConfig = {
   entity: process.env.NEXT_PUBLIC_LEGAL_ENTITY?.trim() || "biccsdev",
-  supportUrl: validUrl(process.env.NEXT_PUBLIC_SUPPORT_URL) ?? "https://discord.gg/QWYxkJgEHH",
+  supportUrl: validUrl(process.env.NEXT_PUBLIC_SUPPORT_URL) ?? "https://github.com/biccsdev/revive-psg1/issues",
   governingLaw: process.env.NEXT_PUBLIC_GOVERNING_LAW?.trim() || null,
   effectiveDate: process.env.NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE?.trim() || null,
   retention: process.env.NEXT_PUBLIC_DATA_RETENTION_POLICY?.trim() || null

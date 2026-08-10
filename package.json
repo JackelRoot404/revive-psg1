@@ -2,12 +2,15 @@
   "name": "revive-psg1",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Device-bound self-service Android conversion for PlaySolana PSG1 handhelds.",
   "workspaces": ["apps/*", "packages/*"],
   "engines": { "node": ">=22.13.0" },
   "scripts": {
     "dev:web": "npm run dev -w @revive-psg1/web",
+    "dev:web:pilot": "REVIVE_DEV_HARDWARE_FIXTURE=true npm run dev -w @revive-psg1/web",
     "dev:api": "npm run dev -w @revive-psg1/api",
+    "dev:api:pilot": "REVIVE_DEV_HARDWARE_FIXTURE=true INSTALLER_MODE=private_beta BETA_HARDWARE_PILOT_ENABLED=true npm run dev -w @revive-psg1/api",
     "dev:desktop": "npm run tauri:dev -w @revive-psg1/desktop",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
@@ -17,7 +20,8 @@
     "release:manifest": "node tools/build-release-manifest.mjs",
     "test:payment:devnet": "REVIVE_DEVNET_PAYMENT_E2E=1 tsx tools/devnet-payment-e2e.ts",
     "db:generate": "npm run db:generate -w @revive-psg1/api",
-    "db:migrate": "npm run db:migrate -w @revive-psg1/api"
+    "db:migrate": "npm run db:migrate -w @revive-psg1/api",
+    "db:beta-pilot": "BETA_INVITE_KIND=hardware_pilot npm run db:beta-invite -w @revive-psg1/api"
   },
   "devDependencies": {
     "@types/node": "22.19.19",

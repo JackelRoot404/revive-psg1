@@ -71,7 +71,8 @@ export function webProfileMatches(profile: CompatibilityProfile, snapshot: WebCo
       && Boolean(snapshot.lineageVersion.trim())
       && firmwareMatches(profile, snapshot.vendorBuildFingerprint, snapshot.buildIncremental);
   }
-  return firmwareMatches(profile, snapshot.systemBuildFingerprint, snapshot.systemBuildIncremental);
+  return snapshot.systemBuildType === "user"
+    && firmwareMatches(profile, snapshot.systemBuildFingerprint, snapshot.systemBuildIncremental);
 }
 
 export function webPreflightMatches(profile: CompatibilityProfile, snapshot: WebCompatibilitySnapshot): boolean {

@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
+import { verify } from "node:crypto";
+import canonicalize from "canonicalize";
 import postgres from "postgres";
 
 const [inputPath] = process.argv.slice(2);
-if (!inputPath || !process.env.DATABASE_URL) {
-  console.error("Usage: DATABASE_URL='postgresql://…' node tools/insert-compatibility-profile.mjs <signed-profile.json>");
+if (!inputPath || !process.env.DATABASE_URL || !process.env.RELEASE_PUBLIC_KEY_PEM) {
+  console.error("Usage: DATABASE_URL='postgresql://…' RELEASE_PUBLIC_KEY_PEM='…' node tools/insert-compatibility-profile.mjs <signed-profile.json>");
   process.exit(2);
 }
 
@@ -14,6 +16,10 @@ const signature = envelope.signature;
 if (!document?.id || typeof document.version !== "number" || !Number.isInteger(document.priority)
   || document.priority < 0 || document.priority > 1_000_000 || !signature) {
   throw new Error("Signed envelope must contain document.id, document.version, document.priority, and signature");
+}
+const canonical = canonicalize(document);
+if (!canonical || !verify(null, Buffer.from(canonical), process.env.RELEASE_PUBLIC_KEY_PEM, Buffer.from(signature, "base64"))) {
+  throw new Error("Compatibility profile signature does not verify with RELEASE_PUBLIC_KEY_PEM");
 }
 
 const sql = postgres(process.env.DATABASE_URL, { max: 1 });

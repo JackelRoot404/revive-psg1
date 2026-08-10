@@ -59,5 +59,6 @@ signed release for recovery/resume. Use
 `INSTALLER_NEW_STARTS_ENABLED=false` for that narrow pause; the API journal
 records `intent`, `sent`, and `verified` checkpoints for the exact device,
 profile, release, and artifact hashes. A stranded Fastboot/Fastbootd device can
-resume only with the browser's rotating, expiring same-origin credential and
-the exact existing binding; it cannot activate a different device or release.
+resume only with the browser's expiring same-origin credential (stable until
+expiry so a crash cannot lose a replacement response) and the exact existing
+binding; it cannot activate a different device or release.

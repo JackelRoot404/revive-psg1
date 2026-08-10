@@ -111,6 +111,10 @@ describe("web destructive preflight", () => {
   });
 
   it("matches stock firmware from the actual system identity", () => expect(webProfileMatches(profile, webSnapshot)).toBe(true));
+  it("rejects a userdebug stock marker from the destructive stock lane", () => expect(webProfileMatches(profile, {
+    ...webSnapshot,
+    systemBuildType: "userdebug"
+  })).toBe(false));
   it("does not mistake a Lineage system for stock when merged props retain PlaySolana", () => expect(webProfileMatches(profile, {
     ...webSnapshot,
     systemBuildFingerprint: "generic/lineage_gsi_arm64_gN/lineage_gsi_arm64:15/build:userdebug/release-keys",

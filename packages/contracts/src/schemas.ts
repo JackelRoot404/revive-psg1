@@ -474,6 +474,25 @@ export const publicEvidenceSchema = z.object({
     reviewedNonGmsGooglePackages: z.array(z.string().trim().min(1).max(240)).max(20),
     reportSha256: z.string().regex(/^[a-f0-9]{64}$/)
   }).strict(),
+  // The evidence must describe the exact bytes that the signed manifest will
+  // serve. Runtime policy cross-checks these records against every manifest
+  // artifact, so a provenance report cannot silently refer to a different
+  // image or a differently-sized vbmeta file.
+  artifactMetadata: z.record(z.string().trim().min(1).max(100), z.object({
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    size: z.number().int().positive()
+  }).strict()).superRefine((metadata, context) => {
+    if (Object.keys(metadata).length === 0) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Artifact metadata must not be empty" });
+    }
+  }),
+  avb: z.object({
+    vbmetaArtifactId: z.string().trim().min(1).max(100),
+    algorithm: z.string().regex(/^SHA(?:256|512)_RSA(?:2048|4096|8192)$/u),
+    publicKeySha256: z.string().regex(/^[a-f0-9]{64}$/),
+    descriptorsSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    rollbackIndex: z.number().int().nonnegative()
+  }).strict(),
   windowsFastbootDriver: z.object({
     packageUrl: z.string().url().refine((value) => new URL(value).protocol === "https:"),
     installerSha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -483,7 +502,11 @@ export const publicEvidenceSchema = z.object({
     // Rockchip vendor id or Android ADB interface.
     hardwareIds: z.array(z.string().regex(/^USB\\VID_[0-9A-F]{4}&PID_[0-9A-F]{4}&MI_[0-9A-F]{2}$/u)).min(1).max(8),
     interfaceGuid: z.string().uuid(),
-    testedWindowsVersions: z.array(z.enum(["windows_10", "windows_11"])).min(2).max(2)
+    testedWindowsVersions: z.array(z.enum(["windows_10", "windows_11"])).length(2).superRefine((versions, context) => {
+      if (new Set(versions).size !== 2) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "Both Windows 10 and Windows 11 must be tested" });
+      }
+    })
   }).strict(),
   // Public self-service requires complete validation on stock hardware in
   // every supported desktop browser. Unlike private beta, there is no pilot

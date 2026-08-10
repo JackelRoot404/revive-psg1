@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
+import { verify } from "node:crypto";
 import postgres from "postgres";
 import canonicalize from "canonicalize";
 
 const [inputPath] = process.argv.slice(2);
-if (!inputPath || !process.env.DATABASE_URL) {
-  console.error("Usage: DATABASE_URL='postgresql://…' node tools/insert-release-manifest.mjs <signed-release.json>");
+if (!inputPath || !process.env.DATABASE_URL || !process.env.RELEASE_PUBLIC_KEY_PEM) {
+  console.error("Usage: DATABASE_URL='postgresql://…' RELEASE_PUBLIC_KEY_PEM='…' node tools/insert-release-manifest.mjs <signed-release.json>");
   process.exit(2);
 }
 
@@ -22,6 +23,10 @@ if (new Set(document.profileIds).size !== document.profileIds.length || document
 if (!Number.isFinite(Date.parse(document.publishedAt ?? ""))) throw new Error("Release publishedAt must be an ISO date-time");
 if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(document.releaseId)) {
   throw new Error("Release releaseId must be a UUID");
+}
+const canonical = canonicalize(document);
+if (!canonical || !verify(null, Buffer.from(canonical), process.env.RELEASE_PUBLIC_KEY_PEM, Buffer.from(signature, "base64"))) {
+  throw new Error("Release manifest signature does not verify with RELEASE_PUBLIC_KEY_PEM");
 }
 
 const sql = postgres(process.env.DATABASE_URL, { max: 1 });

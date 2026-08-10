@@ -1,17 +1,15 @@
 import Link from "next/link";
-import { DonationBanner } from "./donation-banner";
 
-const capabilities = ["Physical controls", "Wi-Fi & audio", "Aurora Store", "F-Droid", "RetroArch", "Optional local GMS validation"];
+const capabilities = ["WebUSB prototype", "Signed policy schemas", "Installation journal", "Resume design", "Diagnostics source", "Automated fixtures"];
 
 export default function Home() {
   return <main>
-    <DonationBanner />
     <section className="hero">
-      <div className="eyebrow"><span className="pulse" /> FREE PSG1 COMPATIBILITY & INSTALLER</div>
-      <h1>Revive your <em>PSG1.</em></h1>
-      <p className="hero-copy">Connect a stock PSG1 over USB for a free safety scan. If its signed hardware profile and preflight pass, the browser shows the installation availability for that exact device—without a wallet, payment, or Discord code.</p>
-      <div className="hero-actions"><Link className="button primary" href="/wizard">Check PSG1 and continue</Link><Link className="button ghost" href="/docs">See the process</Link></div>
-      <div className="trust-row"><span>✓ Free safety scan</span><span>✓ No wallet or Discord code</span><span>✓ Signed artifacts only</span></div>
+      <div className="eyebrow"><span className="pulse" /> COMMUNITY RESEARCH HANDOFF</div>
+      <h1>Continue <em>Revive PSG1.</em></h1>
+      <p className="hero-copy">Active development and hosted operation have ended. This unfinished Apache-2.0 project is available for community research, but it has no stock-device validation or approved flashing release.</p>
+      <div className="hero-actions"><Link className="button primary" href="https://github.com/biccsdev/revive-psg1">View the source</Link><Link className="button ghost" href="/docs">Read the safety model</Link></div>
+      <div className="trust-row"><span>✓ Scan-only default</span><span>✓ No release binaries</span><span>✓ Community contributions welcome</span></div>
       <div className="device-card" aria-label="Revive installation preview">
         <div className="device-screen">
           <span className="screen-kicker">REVIVE / READY</span><strong>PSG1 detected</strong>
@@ -27,8 +25,8 @@ export default function Home() {
     </section>
 
     <section className="section split">
-      <div><span className="section-label">WHAT YOU GET</span><h2>A handheld you can actually use.</h2></div>
-      <div><p>Revive keeps the validated PSG1 hardware layer and installs a focused Android gaming environment. Each signed profile states exactly which hardware and software capabilities were verified.</p><div className="chips">{capabilities.map((item) => <span key={item}>{item}</span>)}</div></div>
+      <div><span className="section-label">WHAT EXISTS</span><h2>A safety-first prototype.</h2></div>
+      <div><p>The repository preserves the compatibility scanner, guarded installer architecture, research notes, and unresolved release gates. It does not include firmware or a supported conversion.</p><div className="chips">{capabilities.map((item) => <span key={item}>{item}</span>)}</div></div>
     </section>
 
     <section className="section steps">
@@ -36,7 +34,7 @@ export default function Home() {
       <div className="step-grid">
         <article><b>01</b><h3>Scan</h3><p>Open desktop Chrome or Edge and connect over USB. Revive checks serial consistency, firmware, battery, storage, and recovery support—free.</p></article>
         <article><b>02</b><h3>Decision</h3><p>See a clear result: ready, temporarily blocked with a fix, or not part of the stock-device release. No device is modified during the scan.</p></article>
-        <article><b>03</b><h3>Revive</h3><p>When the secure service is open for a passing PSG1, follow the guided wipe and installation. Every artifact is signed and verified before the device is modified.</p></article>
+        <article><b>03</b><h3>Research</h3><p>Complete the stock-hardware, attestation, driver, artifact, recovery, and independent-security gates before proposing any flashing release.</p></article>
       </div>
     </section>
 

@@ -78,8 +78,9 @@ wipe confirmation, reconnect prompts after every reboot, signed
 system/super-partition capacity checks before Fastbootd resize/flash, and
 exact-release resume checks. After the destructive boundary, an expiring opaque
 credential saved in the same-origin persistent journal can recover an exact
-installation that is stranded in Fastboot/Fastbootd; it rotates on use and
-cannot create a new entitlement or change the signed release.
+installation that is stranded in Fastboot/Fastbootd. It remains stable until
+expiry so a tab crash cannot lose a replacement response, and cannot create a new
+entitlement or change the signed release.
 
 ### Safe testing lanes
 

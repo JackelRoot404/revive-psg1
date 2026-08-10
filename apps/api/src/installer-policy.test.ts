@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CompatibilityProfile, InstallationJournalEntry, WebCompatibilitySnapshot } from "@revive-psg1/contracts";
-import { buildWebSessionDecision, canonicalSignedDocumentSha256, installerVersionSatisfies, selectUniqueReleaseForProfile, validateInstallationJournalTransition } from "./app";
+import type { CompatibilityProfile, InstallationJournalEntry, ReleaseManifest, WebCompatibilitySnapshot } from "@revive-psg1/contracts";
+import { buildWebSessionDecision, canonicalSignedDocumentSha256, installerVersionSatisfies, publicManifestEvidenceReady, selectUniqueReleaseForProfile, validateInstallationJournalTransition } from "./app";
 import type { ProfileSelection } from "./profiles";
 
 const profile: CompatibilityProfile = {
@@ -55,6 +55,43 @@ const snapshot: WebCompatibilitySnapshot = {
 };
 
 const matched: ProfileSelection = { status: "matched", profile };
+
+const publicArtifacts = ([
+  ["system", "android_system", "system"], ["vbmeta", "verified_boot", "vbmeta"],
+  ["diagnostics", "diagnostics", "apk"], ["diagnostics_test", "diagnostics_test", "apk"],
+  ["aurora", "aurora_store", "apk"], ["retroarch", "retroarch", "apk"]
+] as const).map(([id, component, kind], index) => ({
+  id, component, kind, delivery: "private" as const, objectKey: `private/${id}`, size: 100 + index,
+  sha256: String(index + 1).repeat(64),
+  ...(kind === "apk" ? { signerSha256: "f".repeat(64), packageName: `com.example.${id}`, versionName: "1.0" } : {})
+}));
+
+function publicEvidenceManifest(): ReleaseManifest {
+  const artifactMetadata = Object.fromEntries(publicArtifacts.map((artifact) => [artifact.id, { sha256: artifact.sha256, size: artifact.size }]));
+  return {
+    releaseId: "00000000-0000-4000-8000-000000000001", channel: "stable", version: "2026.07.31", minimumInstallerVersion: "0.3.0",
+    profileIds: [profile.id], artifacts: publicArtifacts, releaseNotes: "test", publishedAt: "2026-01-01T00:00:00.000Z", signingKeyId: "test",
+    flashPlan: {
+      version: 1, target: "PSG1", requiredInstallationState: "stock_locked", unlockCommand: "fastboot oem at-unlock-vboot",
+      vbmetaPartition: "vbmeta", systemPartition: "system", systemMode: "fastbootd", minimumSystemBytes: 4_000_000_000,
+      minimumSuperPartitionBytes: 54_975_528_960, resizeLogicalSystem: true, wipeUserData: true,
+      postFlashApkComponents: ["diagnostics", "diagnostics_test", "aurora_store", "retroarch"], requiredColdBoots: 2,
+      diagnosticsCommand: ["am", "instrument", "-w", "com.revivepsg1.diagnostics.test/androidx.test.runner.AndroidJUnitRunner"]
+    },
+    publicEvidence: {
+      source: { releaseUrl: "https://example.com/release", tag: "v1", upstreamAssetName: "system.img", upstreamArchiveSha256: "a".repeat(64), expandedSystemSha256: publicArtifacts[0]!.sha256 },
+      licenseReview: { status: "approved", license: "Apache-2.0", reviewer: "reviewer", reviewedAt: "2026-01-01T00:00:00.000Z", evidenceUrl: "https://example.com/license" },
+      noGmsInspection: { tool: "test", inspectedAt: "2026-01-01T00:00:00.000Z", checkedPaths: ["/system/app", "/system/priv-app", "/product/app"], detectedGmsPackages: [], reviewedNonGmsGooglePackages: [], reportSha256: "b".repeat(64) },
+      artifactMetadata,
+      avb: { vbmetaArtifactId: "vbmeta", algorithm: "SHA256_RSA4096", publicKeySha256: "c".repeat(64), descriptorsSha256: "d".repeat(64), rollbackIndex: 0 },
+      windowsFastbootDriver: { packageUrl: "https://example.com/driver", installerSha256: "1".repeat(64), catalogSha256: "2".repeat(64), authenticodeSigner: "Revive", hardwareIds: ["USB\\VID_1234&PID_ABCD&MI_01"], interfaceGuid: "00000000-0000-4000-8000-000000000000", testedWindowsVersions: ["windows_10", "windows_11"] },
+      stockPsg1Validation: { status: "passed", validatedAt: "2026-01-01T00:00:00.000Z", stockUnitCount: 1, chromeWindows: true, edgeWindows: true, chromeMacos: true, edgeMacos: true, controls: true, wifi: true, audio: true, storage: true, auroraStore: true, retroArch: true, diagnostics: true, twoColdBoots: true },
+      artifactSha256: Object.fromEntries(publicArtifacts.map((artifact) => [artifact.id, artifact.sha256])),
+      review: { status: "approved", reviewer: "reviewer", reviewedAt: "2026-01-01T00:00:00.000Z", riskAcknowledgement: "I approve public self-service PSG1 installation only for stock-locked devices using this signed flash plan." }
+    },
+    signature: "s".repeat(64)
+  } as ReleaseManifest;
+}
 
 function journalEntry(overrides: Partial<InstallationJournalEntry> = {}): InstallationJournalEntry {
   return {
@@ -172,6 +209,14 @@ describe("web installer decision", () => {
     expect(decision.canInstall).toBe(false);
     expect(decision.blockers).toContain("INSTALLER_NEW_STARTS_PAUSED");
   });
+
+  it("binds public release evidence to exact artifact sizes, system bytes, and vbmeta identity", () => {
+    const manifest = publicEvidenceManifest();
+    expect(publicManifestEvidenceReady(manifest)).toBe(true);
+    expect(publicManifestEvidenceReady({ ...manifest, publicEvidence: { ...manifest.publicEvidence!, source: { ...manifest.publicEvidence!.source, expandedSystemSha256: "e".repeat(64) } } })).toBe(false);
+    expect(publicManifestEvidenceReady({ ...manifest, publicEvidence: { ...manifest.publicEvidence!, artifactMetadata: { ...manifest.publicEvidence!.artifactMetadata, system: { ...manifest.publicEvidence!.artifactMetadata.system!, size: 999 } } } })).toBe(false);
+    expect(publicManifestEvidenceReady({ ...manifest, publicEvidence: { ...manifest.publicEvidence!, avb: { ...manifest.publicEvidence!.avb, vbmetaArtifactId: "wrong" } } })).toBe(false);
+  });
 });
 
 describe("installation journal state machine", () => {
@@ -278,5 +323,19 @@ describe("installation journal state machine", () => {
     expect(validateInstallationJournalTransition(unlockUnknown, unlockRetry))
       .toMatch(/retry only an idempotent/u);
     expect(validateInstallationJournalTransition(sparseUnknown, sparseRetry)).toBeNull();
+  });
+
+  it("allows a source-mode retry for an idempotent reboot checkpoint", () => {
+    const rebootVerified = journalEntry({
+      stage: "awaiting_bootloader_unlock",
+      operation: "begin",
+      operationState: "verified"
+    });
+    const retry = journalEntry({
+      stage: "start",
+      operation: "begin",
+      operationState: "intent"
+    });
+    expect(validateInstallationJournalTransition(rebootVerified, retry)).toBeNull();
   });
 });

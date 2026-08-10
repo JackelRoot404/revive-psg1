@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from "node:crypto";
-import { createReadStream, lstatSync, readFileSync } from "node:fs";
+import { closeSync, createReadStream, lstatSync, openSync, readFileSync, readSync } from "node:fs";
 import { basename, resolve } from "node:path";
 
 const [configPath] = process.argv.slice(2);
@@ -23,6 +23,7 @@ const kinds = new Set(["system", "vbmeta", "apk", "recovery"]);
 const privateComponents = new Set(["android_system", "verified_boot", "recovery", "aurora_store", "fdroid", "retroarch", "diagnostics", "diagnostics_test", "stock_restore"]);
 const ids = new Set();
 const objectKeys = new Set();
+const sourcePaths = new Map();
 const installerComponents = new Set(["android_system", "verified_boot", "diagnostics", "diagnostics_test", "aurora_store", "retroarch"]);
 const seenInstallerComponents = new Set();
 const artifacts = [];
@@ -41,6 +42,7 @@ for (const source of input.artifacts) {
     if (typeof source.objectKey !== "string" || source.objectKey.startsWith("/") || source.objectKey.includes("..")) throw new Error(`Unsafe object key: ${source.objectKey}`);
     if (objectKeys.has(source.objectKey)) throw new Error(`Duplicate object key: ${source.objectKey}`);
     const { path, stat } = requireRegularFile(source.path, source.id);
+    sourcePaths.set(source.id, path);
     objectKeys.add(source.objectKey);
     artifacts.push({
       id: source.id, kind: source.kind, delivery: "private", component: source.component,
@@ -85,6 +87,9 @@ if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const publishedAt = input.publishedAt ?? new Date().toISOString();
 if (!Number.isFinite(Date.parse(publishedAt))) throw new Error("publishedAt must be an ISO date-time");
 
+const evidence = releaseEvidence(input, artifacts);
+if (evidence.publicEvidence) validatePrivateArtifactFormats(artifacts, sourcePaths);
+
 const manifest = {
   releaseId,
   channel: "stable",
@@ -96,7 +101,7 @@ const manifest = {
   publishedAt,
   signingKeyId: input.signingKeyId,
   flashPlan,
-  ...releaseEvidence(input, artifacts)
+  ...evidence
 };
 
 process.stderr.write(`Built unsigned manifest ${manifest.version} with ${artifacts.length} artifact(s) from ${basename(configPath)}\n`);
@@ -185,6 +190,14 @@ function validateBetaEvidence(path, artifacts) {
 function validatePublicEvidence(path, artifacts) {
   const evidence = JSON.parse(readFileSync(resolve(path), "utf8"));
   validateCommonEvidence(evidence, artifacts, "public release");
+  validateArtifactMetadata(evidence, artifacts, "public release");
+  const system = artifacts.find((artifact) => artifact.delivery === "private" && artifact.component === "android_system" && artifact.kind === "system");
+  const vbmeta = artifacts.find((artifact) => artifact.delivery === "private" && artifact.component === "verified_boot" && artifact.kind === "vbmeta");
+  if (!system || !vbmeta) throw new Error("public release evidence requires private system and vbmeta artifacts");
+  if (evidence.source.expandedSystemSha256 !== system.sha256) throw new Error("public release expandedSystemSha256 must match the served android_system artifact");
+  if (evidence.avb?.vbmetaArtifactId !== vbmeta.id || evidence.artifactMetadata?.[vbmeta.id]?.sha256 !== vbmeta.sha256) {
+    throw new Error("public release AVB metadata must identify the exact verified_boot artifact");
+  }
   const driver = evidence?.windowsFastbootDriver;
   if (!driver || !/^https:\/\//.test(driver.packageUrl ?? "") || !isSha(driver.installerSha256) || !isSha(driver.catalogSha256)
     || typeof driver.authenticodeSigner !== "string" || !driver.authenticodeSigner.trim()
@@ -226,6 +239,51 @@ function validateCommonEvidence(evidence, artifacts, label) {
   for (const artifact of artifacts) {
     if (evidence.artifactSha256[artifact.id] !== artifact.sha256) throw new Error(`${label} evidence does not match artifact ${artifact.id}`);
   }
+}
+
+function validateArtifactMetadata(evidence, artifacts, label) {
+  if (!evidence.artifactMetadata || typeof evidence.artifactMetadata !== "object" || Array.isArray(evidence.artifactMetadata)) {
+    throw new Error(`${label} evidence is missing artifact metadata`);
+  }
+  for (const artifact of artifacts) {
+    const metadata = evidence.artifactMetadata[artifact.id];
+    if (!metadata || metadata.sha256 !== artifact.sha256 || metadata.size !== artifact.size) {
+      throw new Error(`${label} artifact metadata does not match ${artifact.id}`);
+    }
+  }
+}
+
+function validatePrivateArtifactFormats(artifacts, sourcePaths) {
+  const system = artifacts.find((artifact) => artifact.delivery === "private" && artifact.component === "android_system" && artifact.kind === "system");
+  const vbmeta = artifacts.find((artifact) => artifact.delivery === "private" && artifact.component === "verified_boot" && artifact.kind === "vbmeta");
+  if (!system || !vbmeta) return;
+  assertArtifactMagic(sourcePaths.get(system.id), "android_system", [
+    { offset: 0, bytes: [0x3a, 0xff, 0x26, 0xed] },
+    { offset: 1080, bytes: [0x53, 0xef] },
+    { offset: 1024, bytes: [0xe2, 0xe1, 0xf5, 0xe0] }
+  ]);
+  assertArtifactMagic(sourcePaths.get(vbmeta.id), "verified_boot", [{ offset: 0, bytes: [0x41, 0x56, 0x42, 0x30] }]);
+  for (const artifact of artifacts.filter((candidate) => candidate.delivery === "private" && candidate.kind === "apk")) {
+    assertArtifactMagic(sourcePaths.get(artifact.id), artifact.component, [
+      { offset: 0, bytes: [0x50, 0x4b, 0x03, 0x04] },
+      { offset: 0, bytes: [0x50, 0x4b, 0x05, 0x06] }
+    ]);
+  }
+}
+
+function assertArtifactMagic(path, label, alternatives) {
+  if (!path) throw new Error(`${label} source path is missing`);
+  const matches = alternatives.some(({ offset, bytes }) => {
+    const fd = openSync(path, "r");
+    try {
+      const buffer = Buffer.alloc(bytes.length);
+      const read = readSync(fd, buffer, 0, buffer.length, offset);
+      return read === bytes.length && bytes.every((byte, index) => buffer[index] === byte);
+    } finally {
+      closeSync(fd);
+    }
+  });
+  if (!matches) throw new Error(`${label} is not a recognized release artifact format`);
 }
 
 function validateFlashPlan(value) {

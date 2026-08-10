@@ -75,7 +75,21 @@ export class BrowserInstaller {
   }
 
   async unlock(): Promise<BrowserInstallStep> {
-    const fastboot = await WebFastbootPsg1.request();
+    let fastboot: WebFastbootPsg1;
+    try {
+      fastboot = await WebFastbootPsg1.request();
+    } catch (cause) {
+      if (!fastbootPickerUnavailable(cause)) throw cause;
+      // If the reboot was journaled as sent but the handset is still in
+      // Android, expose the source-mode retry instead of trapping the owner
+      // in an empty Fastboot picker. Reboot is idempotent and remains inside
+      // the same signed checkpoint.
+      const adb = await WebAdbPsg1.request();
+      try {
+        await this.runOperation("begin", "start", "awaiting_bootloader_unlock", () => this.assertFreshStockLockedPreflight(adb), () => adb.rebootBootloader());
+        return "awaiting_bootloader_unlock";
+      } finally { await adb.close().catch(() => undefined); }
+    }
     try {
       const prepare = () => this.assertFastbootIdentityAndMode(fastboot, "bootloader");
       // A crash after Fastboot accepted the initial reboot can leave the
@@ -106,7 +120,17 @@ export class BrowserInstaller {
   }
 
   async flashVbmeta(): Promise<BrowserInstallStep> {
-    const fastboot = await WebFastbootPsg1.request();
+    let fastboot: WebFastbootPsg1;
+    try {
+      fastboot = await WebFastbootPsg1.request();
+    } catch (cause) {
+      if (!fastbootPickerUnavailable(cause)) throw cause;
+      const adb = await WebAdbPsg1.request();
+      try {
+        await this.runOperation("reboot_for_vbmeta", "awaiting_unlocked_android", "awaiting_vbmeta_bootloader", () => this.assertAdbIdentity(adb, true), () => adb.rebootBootloader());
+        return "awaiting_vbmeta_bootloader";
+      } finally { await adb.close().catch(() => undefined); }
+    }
     try {
       const prepare = () => this.assertFastbootIdentityAndMode(fastboot, "bootloader");
       await this.verifyReconnectCheckpoint("reboot_for_vbmeta", "awaiting_vbmeta_bootloader", prepare);
@@ -144,7 +168,17 @@ export class BrowserInstaller {
   }
 
   async flashSystem(): Promise<BrowserInstallStep> {
-    const fastboot = await WebFastbootPsg1.request();
+    let fastboot: WebFastbootPsg1;
+    try {
+      fastboot = await WebFastbootPsg1.request();
+    } catch (cause) {
+      if (!fastbootPickerUnavailable(cause)) throw cause;
+      const adb = await WebAdbPsg1.request();
+      try {
+        await this.runOperation("reboot_for_fastbootd", "awaiting_system_android", "awaiting_fastbootd_system", () => this.assertAdbIdentity(adb, true), () => adb.rebootFastboot());
+        return "awaiting_fastbootd_system";
+      } finally { await adb.close().catch(() => undefined); }
+    }
     try {
       const stage = "awaiting_fastbootd_system" as const;
       const prepare = () => this.assertFastbootIdentityAndMode(fastboot, this.context.flashPlan.systemMode);
@@ -383,6 +417,11 @@ function apkOperation(component: "diagnostics" | "diagnostics_test" | "aurora_st
     retroarch: "install_retroarch"
   } as const;
   return operations[component];
+}
+
+function fastbootPickerUnavailable(cause: unknown): boolean {
+  return (typeof DOMException !== "undefined" && cause instanceof DOMException && cause.name === "NotFoundError")
+    || (cause instanceof Error && /No PSG1 Fastboot device was selected|Fastboot .*not available|Fastboot interface/iu.test(cause.message));
 }
 
 const INSTALLATION_OPERATION_ORDER: readonly string[] = [

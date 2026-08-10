@@ -1,6 +1,15 @@
 # Revive PSG1
 
-Self-service software for converting a compatible, stock PlaySolana PSG1 into a general-purpose Android gaming handheld. The product is a Netlify-hosted Chrome/Edge WebUSB wizard backed by a Fastify API on DigitalOcean App Platform.
+Prototype software for researching conversion of a compatible, stock PlaySolana
+PSG1 into a general-purpose Android gaming handheld. The design uses a
+Chrome/Edge WebUSB wizard backed by a Fastify API; the former hosted service has
+been shut down.
+
+> **Community handoff:** Active development and hosted operation ended on
+> 2026-08-10. This Apache-2.0 repository is published as unfinished research so
+> the community can continue it. There is no funded maintainer, supported
+> release, stock-device validation, or approved flashing artifact. Start with
+> [`docs/community-handoff.md`](docs/community-handoff.md) before contributing.
 
 > **Current availability: read-only scan only.** The repository defaults the API to `INSTALLER_MODE=scan_only`; the public installer must remain closed. The code has public-flow safeguards, but this repository does not yet contain a production release, a signed PSG1-only Windows driver, completed physical-host testing, or a trusted hardware-attestation source. A browser scan alone cannot prove that a caller owns a particular physical PSG1. Do not set `INSTALLER_MODE=public` or distribute experimental images.
 
@@ -51,7 +60,27 @@ npm run dev:api
 npm run dev:web
 ```
 
-The API intentionally reports a non-installable scan decision unless `RELEASE_PUBLIC_KEY_PEM` is configured and the database contains a matching active profile whose canonical JSON signature verifies. Even with those development materials present, keep the service in `scan_only`; a signed profile or manifest is not physical-device attestation.
+For the single supervised local hardware-pilot lane, start the API with the
+pilot-only flags and create the one-use pilot invite after a signed
+`pilot_pending` release has been inserted:
+
+```bash
+npm run dev:api:pilot
+npm run dev:web:pilot
+npm run db:beta-pilot
+```
+
+The two pilot development commands also enable the non-destructive **Simulate
+stock PSG1** button. The pilot and fixture flags are local-only; production
+remains `scan_only` unless its deployment environment explicitly selects
+another installer mode.
+
+Normal local development intentionally reports a non-installable scan decision
+unless `RELEASE_PUBLIC_KEY_PEM` is configured and the database contains a
+matching active profile whose canonical JSON signature verifies. The pilot
+command above is the explicit local exception, and still requires a signed
+`pilot_pending` release plus the one-use invite; a signed profile or manifest
+is not physical-device attestation.
 
 ### Test without a stock PSG1
 
@@ -62,7 +91,13 @@ REVIVE_DEV_HARDWARE_FIXTURE=true npm run dev:api
 REVIVE_DEV_HARDWARE_FIXTURE=true npm run dev:web
 ```
 
-Open `http://localhost:3000/wizard` and choose **Simulate stock PSG1**. The fixture exercises session creation, free entitlement, and release authorization without USB hardware. It uses a fixed fake device ID, returns no artifacts, rejects the destructive installation boundary, and is refused by production configuration. It is a software-flow test only; it cannot replace real stock-hardware flashing validation.
+Open `http://localhost:3000/wizard` and choose **Simulate stock PSG1**. The
+fixture exercises session creation and previews the private-pilot authorization,
+artifact-verification, and irreversible-risk screens without USB hardware. It
+uses a fixed fake device ID, consumes no invite, creates no entitlement,
+downloads no artifacts, and stops before every destructive boundary or USB
+command. Production configuration refuses the fixture. It is a software-flow
+test only; it cannot replace real stock-hardware flashing validation.
 
 ## Verification
 
@@ -74,7 +109,10 @@ npm run build
 
 CI repeats the Node, Android diagnostics, dependency-audit, and CodeQL checks.
 
-## Production deployment
+## Historical deployment design
+
+The original hosted service has been decommissioned. The following material is
+preserved as architecture research, not as a supported deployment runbook.
 
 See the [tester launch checklist](docs/tester-launch-checklist.md), [devnet payment testing](docs/devnet-payment-e2e.md), [deployment](docs/deployment.md), [security](docs/security.md), [browser installer](docs/web-installer.md), [beta runbook](docs/beta-runbook.md), [operations](docs/operations.md), and [release process](docs/release.md). The essential order is:
 
@@ -103,7 +141,16 @@ Insert or refresh a signed profile in PostgreSQL with:
 
 ```bash
 DATABASE_URL='postgresql://revive:revive@localhost:5432/revive_psg1' \
+RELEASE_PUBLIC_KEY_PEM="$(cat /secure/revive-release-public.pem)" \
   node tools/insert-compatibility-profile.mjs ~/revive-signing/psg1-rk3588s-v11-api35-v1.signed.json
 ```
 
 Production cutover steps: [compatibility-checker-cutover.md](docs/compatibility-checker-cutover.md).
+
+## License and contributions
+
+Original Revive PSG1 source and artwork are available under
+[Apache-2.0](LICENSE). Third-party software retains its own terms; see
+[third-party notices](THIRD_PARTY_NOTICES.md). Read the
+[community handoff](docs/community-handoff.md), [contribution rules](CONTRIBUTING.md),
+and [security policy](SECURITY.md) before opening a change.

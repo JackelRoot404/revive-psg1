@@ -25,8 +25,10 @@ generic OTA/downgrade package.
    public key.
 3. Upsert every signed profile. Multiple active profiles are supported; their
    signed priorities must not tie for the same device.
-4. Insert active release manifests with
-   `tools/insert-release-manifest.mjs`. Each manifest must name the profile IDs
+4. Insert active signed profiles and release manifests with
+   `RELEASE_PUBLIC_KEY_PEM` set to the offline verification public key. The
+   insertion tools verify the Ed25519 envelope before touching PostgreSQL. Each
+   release manifest must name the profile IDs
    it serves; the insertion tool deactivates only overlapping profile releases.
 5. Confirm a supported stock scan returns a `decision` with
    `profile: matched`, `preflight: passed`, `installerMode: scan_only`, and
