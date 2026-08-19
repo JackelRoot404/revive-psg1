@@ -482,9 +482,14 @@ export function assertFreshStockLockedPsg1Preflight(
   if (snapshot.batteryPercent < 50 && !snapshot.charging) {
     throw new Error("Charge the PSG1 to at least 50% or keep it charging, then run the read-only scan again.");
   }
-  if (snapshot.systemPartitionBytes !== scan.systemPartitionBytes || snapshot.systemPartitionBytes < flashPlan.minimumSystemBytes) {
+  if (snapshot.systemPartitionBytes !== scan.systemPartitionBytes) {
     throw new Error("The PSG1 system partition layout changed or is too small for this signed release. No destructive command was sent.");
   }
+  if (snapshot.systemPartitionBytes <= 0 || snapshot.systemPartitionBytes >= scan.superPartitionBytes) {
+    throw new Error("The PSG1 system partition layout is not a usable stock layout for this signed release. No destructive command was sent.");
+  }
+  // `minimumSystemBytes` is the replacement image / post-resize capacity, not
+  // the live mounted /system size. Stock V11-class images are under 2 GiB.
   if (scan.superPartitionBytes < flashPlan.minimumSuperPartitionBytes) {
     throw new Error("The PSG1 super partition is too small for this signed release. No destructive command was sent.");
   }

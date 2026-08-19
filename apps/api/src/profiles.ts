@@ -80,7 +80,8 @@ export function webPreflightMatches(profile: CompatibilityProfile, snapshot: Web
 }
 
 export function webPreflightBlockers(profile: CompatibilityProfile, snapshot: WebCompatibilitySnapshot): string[] {
-  const system = profile.partitionConstraints.system;
+  const replacementSystem = profile.partitionConstraints.system;
+  const stockSystem = profile.partitionConstraints.stockSystem;
   const superPartition = profile.partitionConstraints.super;
   const blockers: string[] = [];
   if (!snapshot.serialVerified || !snapshot.immutableSerialVerified) blockers.push("SERIAL_VERIFICATION_REQUIRED");
@@ -90,17 +91,23 @@ export function webPreflightBlockers(profile: CompatibilityProfile, snapshot: We
   // because the USB descriptor omits a serial.
   if (!snapshot.usbStable) blockers.push("USB_STABILITY_REQUIRED");
   if (!snapshot.recoveryCapable) blockers.push("RECOVERY_CAPABILITY_REQUIRED");
-  if (!system || !superPartition) {
+  if (!replacementSystem || !superPartition) {
     blockers.push("PROFILE_PARTITION_CONSTRAINTS_MISSING");
     return blockers;
   }
-  if (snapshot.systemPartitionBytes < system.minSize || snapshot.systemPartitionBytes > system.maxSize) {
-    blockers.push("SYSTEM_PARTITION_OUT_OF_RANGE");
+  // `stockSystem` is the observed mounted /system layout. `system` is the
+  // replacement image / post-resize bound. A V11-class stock image is under
+  // 2 GiB; do not apply the replacement floor to the live mount.
+  const currentLayout = stockSystem ?? replacementSystem;
+  const currentBlocker = stockSystem ? "STOCK_SYSTEM_OUT_OF_RANGE" : "SYSTEM_PARTITION_OUT_OF_RANGE";
+  if (snapshot.systemPartitionBytes < currentLayout.minSize || snapshot.systemPartitionBytes > currentLayout.maxSize) {
+    blockers.push(currentBlocker);
   }
   if (snapshot.superPartitionBytes < superPartition.minSize || snapshot.superPartitionBytes > superPartition.maxSize) {
     blockers.push("SUPER_PARTITION_OUT_OF_RANGE");
   }
-  if (snapshot.hostBytesAvailable < snapshot.systemPartitionBytes) blockers.push("HOST_STORAGE_INSUFFICIENT");
+  const hostNeed = replacementSystem.minSize;
+  if (snapshot.hostBytesAvailable < hostNeed) blockers.push("HOST_STORAGE_INSUFFICIENT");
   if (snapshot.batteryPercent < 50 && !snapshot.charging) blockers.push("BATTERY_OR_CHARGING_REQUIRED");
   return blockers;
 }

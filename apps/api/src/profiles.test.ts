@@ -15,6 +15,7 @@ const profile: CompatibilityProfile = {
   vendorApiLevels: [35],
   firmwarePatterns: ["playsolana-20260521-145647"],
   partitionConstraints: {
+    stockSystem: { minSize: 1_600_000_000, maxSize: 1_999_999_999 },
     system: { minSize: 2_000_000_000, maxSize: 4_294_967_296 },
     super: { minSize: 50_000_000_000, maxSize: 60_000_000_000 }
   },
@@ -94,12 +95,24 @@ describe("web destructive preflight", () => {
     usbStable: true,
     recoveryCapable: true,
     hostBytesAvailable: 8_000_000_000,
-    systemPartitionBytes: 4_000_000_000,
+    systemPartitionBytes: 1_803_378_688,
     superPartitionBytes: 54_975_528_960
   };
 
   it("accepts a fully cross-checked device with adequate host capacity", () => expect(webPreflightMatches(profile, webSnapshot)).toBe(true));
-  it("rejects a partition outside the signed profile", () => expect(webPreflightMatches(profile, { ...webSnapshot, systemPartitionBytes: 5_000_000_000 })).toBe(false));
+  it("accepts a V11-class stock mount below the replacement-image 2 GiB floor", () => {
+    expect(webPreflightBlockers(profile, webSnapshot)).not.toContain("STOCK_SYSTEM_OUT_OF_RANGE");
+    expect(webPreflightBlockers(profile, webSnapshot)).not.toContain("SYSTEM_PARTITION_OUT_OF_RANGE");
+  });
+  it("rejects a partition outside the signed stock layout", () => expect(webPreflightMatches(profile, { ...webSnapshot, systemPartitionBytes: 5_000_000_000 })).toBe(false));
+  it("does not treat the replacement-image floor as the live mount minimum", () => {
+    expect(webPreflightBlockers(profile, { ...webSnapshot, systemPartitionBytes: 1_803_378_688 })).not.toContain("SYSTEM_PARTITION_OUT_OF_RANGE");
+    expect(webPreflightBlockers(profile, { ...webSnapshot, systemPartitionBytes: 4_000_000_000 })).toContain("STOCK_SYSTEM_OUT_OF_RANGE");
+  });
+  it("requires host storage for the replacement image, not the live mount", () => {
+    expect(webPreflightBlockers(profile, { ...webSnapshot, hostBytesAvailable: 1_900_000_000 })).toContain("HOST_STORAGE_INSUFFICIENT");
+    expect(webPreflightBlockers(profile, { ...webSnapshot, hostBytesAvailable: 2_100_000_000 })).not.toContain("HOST_STORAGE_INSUFFICIENT");
+  });
   it("rejects a super partition outside the signed profile", () => expect(webPreflightMatches(profile, { ...webSnapshot, superPartitionBytes: 49_000_000_000 })).toBe(false));
   it("rejects low battery unless the device is charging", () => expect(webPreflightMatches(profile, { ...webSnapshot, batteryPercent: 20, charging: false })).toBe(false));
   it("rejects inadequate browser storage", () => expect(webPreflightMatches(profile, { ...webSnapshot, hostBytesAvailable: 1_000_000_000 })).toBe(false));

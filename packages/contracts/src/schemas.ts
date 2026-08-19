@@ -333,6 +333,10 @@ export const compatibilityProfileSchema = z.object({
   androidApiLevels: z.array(z.number().int()),
   vendorApiLevels: z.array(z.number().int()),
   firmwarePatterns: z.array(z.string()).min(1),
+  // Known keys:
+  // - stockSystem: observed mounted /system on a stock unit
+  // - system: replacement image / post-resize logical system
+  // - super: physical super partition
   partitionConstraints: z.record(z.string(), z.object({
     minSize: z.number().int().nonnegative(),
     maxSize: z.number().int().positive()
@@ -426,9 +430,8 @@ export const psg1FlashPlanSchema = z.object({
   vbmetaPartition: z.literal("vbmeta"),
   systemPartition: z.literal("system"),
   systemMode: z.literal("fastbootd"),
-  // These limits bind the release image to a partition layout before the
-  // browser asks Fastbootd to resize anything. They are deliberately part of
-  // the signed command plan rather than an unsigned UI estimate.
+  // Replacement-image / post-resize capacity, not the live mounted /system
+  // size. Stock V11-class images are under 2 GiB and are resized in Fastbootd.
   minimumSystemBytes: z.number().int().min(2_000_000_000).max(4_294_967_296),
   minimumSuperPartitionBytes: z.number().int().min(50_000_000_000).max(60_000_000_000),
   resizeLogicalSystem: z.literal(true),

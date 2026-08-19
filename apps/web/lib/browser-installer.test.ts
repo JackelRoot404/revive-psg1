@@ -54,6 +54,23 @@ describe("signed PSG1 flash plan", () => {
       .toThrow(/partition layout changed/u);
   });
 
+  it("accepts a stock mount smaller than the replacement-image capacity", () => {
+    const scan: WebCompatibilityScan = {
+      deviceId: "a".repeat(64), bootloaderSerial: "PSG1CPU0001", product: "PSG1", model: "PSG1",
+      board: "RK3588S PSG1", hardware: "rk3588", buildFingerprint: "PlaySolana/PSG1/PSG1:15/build:user/release-keys",
+      buildIncremental: "1.1.23", systemBuildFingerprint: "PlaySolana/PSG1/PSG1:15/build:user/release-keys",
+      vendorBuildFingerprint: "PlaySolana/PSG1/PSG1:15/build:user/release-keys", systemBuildIncremental: "1.1.23",
+      systemBuildType: "user", lineageVersion: "", bootloaderUnlocked: false, installationState: "stock_locked",
+      androidApiLevel: 35, vendorApiLevel: 35, batteryPercent: 80, charging: true, serialVerified: true,
+      immutableSerialVerified: true, fastbootUsbDescriptorVerified: false, usbStable: true, recoveryCapable: true,
+      hostBytesAvailable: 8_000_000_000, systemPartitionBytes: 1_803_378_688, superPartitionBytes: 54_975_528_960
+    };
+    const { deviceId: _deviceId, bootloaderSerial, superPartitionBytes: _superPartitionBytes, serialVerified: _serialVerified,
+      immutableSerialVerified: _immutableSerialVerified, fastbootUsbDescriptorVerified: _fastbootUsbDescriptorVerified, ...adbValues } = scan;
+    const fresh: AdbCompatibilityScan = { ...adbValues, bootloaderSerialCandidate: bootloaderSerial };
+    expect(() => assertFreshStockLockedPsg1Preflight(fresh, scan, plan)).not.toThrow();
+  });
+
   it("refuses to resize or flash when the signed image exceeds current Fastbootd capacity", () => {
     expect(() => assertPsg1FastbootdCapacity(plan, 3_500_000_000, 54_975_528_960)).not.toThrow();
     expect(() => assertPsg1FastbootdCapacity(plan, 4_100_000_000, 54_975_528_960)).toThrow(/system image exceeds/u);

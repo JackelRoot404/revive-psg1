@@ -596,6 +596,7 @@ function remediationForBlocker(blocker: string): string {
     BATTERY_OR_CHARGING_REQUIRED: "Charge the PSG1 to at least 50%, or leave it connected to power while charging, then scan again.",
     HOST_STORAGE_INSUFFICIENT: "Free persistent storage in this browser for the signed release, then scan again. Browser private/incognito windows often cannot keep enough storage.",
     SYSTEM_PARTITION_OUT_OF_RANGE: "This PSG1 has a system partition layout the signed release cannot safely use. Do not flash it manually; send the optional report if offered.",
+    STOCK_SYSTEM_OUT_OF_RANGE: "The mounted stock system size is outside the signed hardware profile. A replacement-image size is not used for this check. Do not flash it manually; send the optional report if offered.",
     SUPER_PARTITION_OUT_OF_RANGE: "This PSG1 has a super partition layout the signed release cannot safely use. Do not flash it manually; send the optional report if offered.",
     SERIAL_VERIFICATION_REQUIRED: "Reconnect with a data-capable cable and complete both Android and Fastboot selections so the CPU-to-Fastboot identity check can finish.",
     USB_STABILITY_REQUIRED: "Reconnect the cable directly to the computer, avoid hubs, then rerun the scan so the Android connection remains stable.",

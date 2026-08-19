@@ -37,11 +37,14 @@ universal template (`PSG1`) both match this board identity.
 | Mounted `/system` (`df -k`) | `1803378688` | **Below** template `system.minSize` `2000000000` |
 | Logical `system` mapper | `1833246720` | Same class as the mount |
 
-The signed flash plan still requires a 2–4 GiB current system image
-before resize. A V11-class unit with a ~1.80 GiB mounted system fails
-that preflight even when every other hardware pattern matches. Treat
-the 2 GiB floor as a replacement-image bound, not a measurement of
-this stock layout, until a signed profile is revised.
+Templates now split those bounds:
+
+- `stockSystem` (1.60–1.99 GiB): observed mounted `/system` on a stock
+  V11-class unit. This scan's `1803378688` bytes sits inside that range.
+- `system` (2.00–4.29 GiB): replacement image / post-resize logical
+  system. Host storage preflight uses this floor, not the live mount.
+- Flash-plan `minimumSystemBytes` is the same replacement-image
+  capacity. It is no longer compared to the live mounted size.
 
 Userdata on this class is ~64 GiB. That figure is a SKU observation,
 not an identity.
