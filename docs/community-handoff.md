@@ -49,6 +49,11 @@ The host-only patch is preserved at
 It changes Go garbage-collection pressure during graph generation, not Android
 target contents.
 
+Before anyone retries that build, run
+[`tools/check-lineage-host.sh`](../tools/check-lineage-host.sh). The
+procedure is in [`handoff/lineage-build.md`](handoff/lineage-build.md).
+A 16 GiB or sub-400 GiB host must not start `repo sync`.
+
 Two downloaded comparison GSIs were rejected as public release artifacts:
 
 - The July 2026 Odd Solutions image contained GMS/Play packages.
