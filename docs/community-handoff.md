@@ -12,6 +12,11 @@ and no PSG1-only signed Windows Fastboot driver exists. The project owner did
 not have access to a stock unit. An already-unlocked unit is not evidence for
 the stock-to-unlocked path.
 
+Community continuation after 2026-08-10 remains research-only. A redacted
+read-only ADB observation of a V11-class unit is in
+[`docs/evidence/v11-readonly-adb-2026-08-19.md`](evidence/v11-readonly-adb-2026-08-19.md).
+It does not change the flashing gates.
+
 ## What exists
 
 - A Next.js WebUSB scan/installer prototype and Fastify policy API.

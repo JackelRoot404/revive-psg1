@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyInstallationState, deviceIdForSerial, finalizeWebScan, isExpectedUsbDisconnect, normalizeSerial, parseCpuInfoSerial, parseDfKilobytes, parseFastbootResponse, parseFastbootSize, parseFastbootUnlocked, parseFastbootVariable, WebFastbootPsg1, type AdbCompatibilityScan } from "./webusb-psg1";
+import { classifyInstallationState, deviceIdForSerial, finalizeWebScan, isExpectedUsbDisconnect, looksLikeUserspaceConversion, normalizeSerial, parseCpuInfoSerial, parseDfKilobytes, parseFastbootResponse, parseFastbootSize, parseFastbootUnlocked, parseFastbootVariable, WebFastbootPsg1, type AdbCompatibilityScan } from "./webusb-psg1";
 
 describe("PSG1 WebUSB transport primitives", () => {
   it("normalizes and hashes the same manufacturer serial deterministically", async () => {
@@ -57,9 +57,18 @@ describe("PSG1 WebUSB transport primitives", () => {
     };
     expect(classifyInstallationState({ ...stock, bootloaderUnlocked: false })).toBe("stock_locked");
     expect(classifyInstallationState({ ...stock, bootloaderUnlocked: true })).toBe("stock_unlocked");
+    expect(classifyInstallationState({ ...stock, bootloaderUnlocked: false, userspaceModified: true })).toBe("already_modified");
     expect(parseFastbootUnlocked("yes")).toBe(true);
     expect(parseFastbootUnlocked("locked")).toBe(false);
     expect(parseFastbootUnlocked("unknown")).toBeNull();
+  });
+
+  it("treats a PlaySolana-fingerprint userspace conversion as already modified", () => {
+    const stockHome = "priority=0\ncom.playsolana.echos/.MainActivity\n---PKGS---\ncom.termux missing\napp.lawnchair missing\norg.fdroid.fdroid missing\n    User 0: installed=true enabled=1";
+    const converted = "Launcher: ComponentInfo{app.lawnchair/app.lawnchair.LawnchairLauncher}\napp.lawnchair/.LawnchairLauncher\n---PKGS---\ncom.termux package:/data/app/com.termux/base.apk\napp.lawnchair package:/data/app/app.lawnchair/base.apk\norg.fdroid.fdroid missing\n    User 0: installed=true hidden=false stopped=true enabled=3";
+    expect(looksLikeUserspaceConversion(stockHome)).toBe(false);
+    expect(looksLikeUserspaceConversion(converted)).toBe(true);
+    expect(looksLikeUserspaceConversion("com.termux missing\napp.lawnchair missing\nUser 0: enabled=1")).toBe(false);
   });
 
   it("keeps the generic Fastboot flashing lock distinct from PSG1 verified-boot state", () => {

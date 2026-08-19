@@ -90,7 +90,7 @@ export class WebAdbPsg1 {
   }
 
   async readCompatibility(): Promise<AdbCompatibilityScan> {
-    const [product, model, board, hardware, buildFingerprint, buildIncremental, systemBuildFingerprint, vendorBuildFingerprint, systemBuildIncremental, systemBuildType, lineageVersion, flashLocked, verifiedBootState, cpuInfo, androidApi, vendorApi, battery, recovery, systemStorage, storage] = await Promise.all([
+    const [product, model, board, hardware, buildFingerprint, buildIncremental, systemBuildFingerprint, vendorBuildFingerprint, systemBuildIncremental, systemBuildType, lineageVersion, flashLocked, verifiedBootState, cpuInfo, androidApi, vendorApi, battery, recovery, systemStorage, userspaceProbe, storage] = await Promise.all([
       firstProp(this.adb, ["ro.product.vendor.device", "ro.product.odm.device", "ro.product.device"]),
       firstProp(this.adb, ["ro.product.vendor.model", "ro.product.odm.model", "ro.product.model"]),
       boardIdentity(this.adb),
@@ -110,6 +110,11 @@ export class WebAdbPsg1 {
       this.adb.subprocess.noneProtocol.spawnWaitText(["dumpsys", "battery"]),
       this.adb.subprocess.noneProtocol.spawnWaitText(["sh", "-c", "if command -v reboot >/dev/null 2>&1 || [ -x /system/bin/toybox ] || [ -e /dev/block/by-name/recovery ]; then echo yes; fi"]),
       this.adb.subprocess.noneProtocol.spawnWaitText(["df", "-k", "/system"]),
+      this.adb.subprocess.noneProtocol.spawnWaitText([
+        "sh",
+        "-c",
+        "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME; echo ---PKGS---; for p in com.termux app.lawnchair org.fdroid.fdroid; do echo -n \"$p \"; pm path \"$p\" 2>/dev/null || echo missing; done; dumpsys package com.playsolana.echos | grep -E 'enabled='"
+      ]),
       navigator.storage.estimate()
     ]);
     const batteryPercent = Math.min(100, parseBatteryNumber(battery, "level"));
@@ -126,12 +131,18 @@ export class WebAdbPsg1 {
       systemBuildIncremental: systemBuildIncremental.trim() || buildIncremental.trim(),
       systemBuildType: systemBuildType.trim() || "unknown",
       lineageVersion: lineageVersion.trim(),
-      bootloaderUnlocked
+      bootloaderUnlocked,
+      userspaceModified: looksLikeUserspaceConversion(userspaceProbe)
     };
     return {
       product: product.trim(), model: model.trim(), board: board.trim(), hardware: hardware.trim(),
       buildFingerprint: buildFingerprint.trim(), buildIncremental: buildIncremental.trim(),
-      ...identity,
+      systemBuildFingerprint: identity.systemBuildFingerprint,
+      vendorBuildFingerprint: identity.vendorBuildFingerprint,
+      systemBuildIncremental: identity.systemBuildIncremental,
+      systemBuildType: identity.systemBuildType,
+      lineageVersion: identity.lineageVersion,
+      bootloaderUnlocked,
       installationState: classifyInstallationState(identity),
       bootloaderSerialCandidate,
       androidApiLevel: parseInteger(androidApi), vendorApiLevel: parseInteger(vendorApi),
@@ -462,7 +473,9 @@ export async function finalizeWebScan(
     // accepted a boot-mode transition even when the GSI has no reboot binary.
     recoveryCapable: true,
     bootloaderUnlocked,
-    installationState: classifyInstallationState({ ...adbScan, bootloaderUnlocked }),
+    installationState: adbScan.installationState === "already_modified"
+      ? "already_modified"
+      : classifyInstallationState({ ...adbScan, bootloaderUnlocked }),
     deviceId: await deviceIdForSerial(fastbootSerial),
     bootloaderSerial: fastbootSerial,
     superPartitionBytes,
@@ -474,12 +487,25 @@ export async function finalizeWebScan(
 
 export function classifyInstallationState(identity: Pick<WebCompatibilityScan,
   "systemBuildFingerprint" | "vendorBuildFingerprint" | "systemBuildIncremental" | "systemBuildType" | "lineageVersion" | "bootloaderUnlocked"
->): Exclude<InstallationState, "development_fixture"> {
+> & { userspaceModified?: boolean }): Exclude<InstallationState, "development_fixture"> {
   const systemIdentity = `${identity.systemBuildFingerprint}\n${identity.systemBuildIncremental}\n${identity.lineageVersion}`.toLowerCase();
   const modifiedSystem = Boolean(identity.lineageVersion.trim())
     || /(?:^|[\/_-])(lineage|aosp|generic|gsi)(?:[\/_:-]|$)/iu.test(systemIdentity);
-  if (modifiedSystem) return "already_modified";
+  if (modifiedSystem || identity.userspaceModified) return "already_modified";
   return identity.bootloaderUnlocked ? "stock_unlocked" : "stock_locked";
+}
+
+/**
+ * Stock echOS still reports PlaySolana fingerprints and a locked bootloader
+ * after a userspace conversion (Termux, Lawnchair, Echos disabled). Those
+ * units must not be treated as flashable stock devices.
+ */
+export function looksLikeUserspaceConversion(probe: string): boolean {
+  if (/^com\.termux\s+package:/mu.test(probe)) return true;
+  if (/^app\.lawnchair\s+package:/mu.test(probe)) return true;
+  if (/^org\.fdroid\.fdroid\s+package:/mu.test(probe)) return true;
+  if (/app\.lawnchair\//iu.test(probe)) return true;
+  return /User 0:.*\benabled=3\b/u.test(probe);
 }
 
 export function parseFastbootUnlocked(value: string): boolean | null {
